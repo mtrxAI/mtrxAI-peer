@@ -1,0 +1,2620 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>mtrxAI Client</title>
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml" />
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          screens: { xs: '475px' },
+          colors: {
+            slate: {
+              50: '#f8f9fb',
+              100: '#e8eaef',
+              200: '#d4d8e0',
+              300: '#c5cad3',
+              400: '#9aa3b2',
+              500: '#9aa3b2',
+              600: '#6b7280',
+              700: '#2a3142',
+              800: '#222633',
+              900: '#1a1d27',
+              950: '#0f1117',
+            },
+          },
+        },
+      },
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <style>[x-cloak] { display: none !important; }</style>
+</head>
+<body class="min-h-full overflow-x-hidden text-slate-100 antialiased" x-data="mtrxaiApp()" x-init="init()" x-cloak>
+  <div class="min-h-full flex flex-col">
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-10">
+      <div class="mx-auto max-w-7xl px-4 py-2 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2 min-w-0">
+          <img src="/assets/logo.svg" alt="mtrxAI" class="h-12 w-12 object-contain shrink-0" />
+          <h1 class="text-base font-semibold truncate" title="mtrxAI Client"><span class="text-white">mtrx</span><span class="text-emerald-400">AI</span><span class="text-white"> Client</span></h1>
+        </div>
+        <div x-show="setup.complete" class="flex items-center gap-2 text-xs shrink-0">
+          <span class="rounded-md bg-slate-800 px-2 py-1 truncate"
+            :title="'Credit balance: ' + (status.credit_balance ?? '—')">
+            Credits: <strong x-text="status.credit_balance ?? '—'"></strong>
+          </span>
+          <span class="rounded-md bg-slate-800 px-2 py-1 truncate hidden xs:inline"
+            :title="'Local models: ' + (status.local_models?.length ?? 0) + ', Network models: ' + uniqueNetworkModelCount()">
+            Models: <strong x-text="(status.local_models?.length ?? 0) + ' · ' + uniqueNetworkModelCount()"></strong>
+          </span>
+          <span class="rounded-md bg-slate-800 px-2 py-1 truncate hidden sm:inline"
+            :title="'Inbound peers: ' + (status.connections?.inbound_count ?? 0) + ', Outbound peers: ' + (status.connections?.outbound_count ?? 0)">
+            Peers: <strong x-text="(status.connections?.inbound_count ?? 0) + ' · ' + (status.connections?.outbound_count ?? 0)"></strong>
+          </span>
+          <button type="button" class="rounded-md p-1.5 hover:bg-slate-800 transition"
+            :title="status.lobby_connected ? 'Lobby server reachable' : 'Lobby server offline'"
+            @click="switchDashboardTab('network')">
+            <span class="block h-2.5 w-2.5 rounded-full"
+              :class="status.lobby_connected ? 'bg-emerald-400' : 'bg-amber-400'"></span>
+          </button>
+          <button type="button" class="rounded-md p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+            title="Settings" @click="settingsPanel.open = true">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Settings panel -->
+    <div x-show="settingsPanel.open" x-cloak
+      class="fixed inset-0 z-50 flex justify-end bg-black/50"
+      @keydown.escape.window="settingsPanel.open = false">
+      <div class="w-full max-w-sm h-full border-l border-slate-700 bg-slate-900 p-4 space-y-4 shadow-xl overflow-y-auto"
+        @click.outside="settingsPanel.open = false">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold">Settings</h2>
+          <button type="button" @click="settingsPanel.open = false" class="text-slate-400 hover:text-slate-200 text-sm" title="Close">✕</button>
+        </div>
+        <p class="text-xs text-slate-500">Settings are saved locally in client_config.json.</p>
+        <label class="flex items-start gap-3 cursor-pointer rounded-lg bg-slate-800/50 px-3 py-3">
+          <input type="checkbox" class="mt-1 rounded border-slate-600 bg-slate-800"
+            :checked="settings.autoApproveRunModelRequest"
+            @change="saveSettings({ auto_approve_run_model_request: $event.target.checked })" />
+          <span>
+            <span class="block text-sm font-medium">Auto-approve run model requests</span>
+            <span class="block text-xs text-slate-500 mt-1">Automatically accept incoming cluster model start requests on this machine without showing Accept/Reject prompts.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3 cursor-pointer rounded-lg bg-slate-800/50 px-3 py-3">
+          <input type="checkbox" class="mt-1 rounded border-slate-600 bg-slate-800"
+            :checked="settings.autoApproveInferenceConnections"
+            @change="saveSettings({ auto_approve_inference_connections: $event.target.checked })" />
+          <span>
+            <span class="block text-sm font-medium">Auto-approve inference connections</span>
+            <span class="block text-xs text-slate-500 mt-1">Automatically accept incoming cluster inference connection requests without showing Accept/Reject prompts.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3 cursor-pointer rounded-lg bg-slate-800/50 px-3 py-3">
+          <input type="checkbox" class="mt-1 rounded border-slate-600 bg-slate-800"
+            :checked="settings.ollamaTlsInsecure"
+            @change="saveSettings({ ollama_tls_insecure: $event.target.checked })" />
+          <span>
+            <span class="block text-sm font-medium">Accept self-signed TLS for local LLM servers</span>
+            <span class="block text-xs text-slate-500 mt-1">Required for HTTPS backends with self-signed certificates (e.g. mtrxAI inference-cell on <code class="text-slate-400">https://127.0.0.1:8443</code>). Dev/local use only.</span>
+          </span>
+        </label>
+        <div class="rounded-lg bg-slate-800/50 px-3 py-3 space-y-2">
+          <label class="block text-sm font-medium" for="defaultNumCtx">Default context window</label>
+          <input id="defaultNumCtx" type="number" min="1" step="1"
+            x-model="settings.defaultNumCtx"
+            @change="saveDefaultNumCtx()"
+            placeholder="e.g. 16384"
+            class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm" />
+          <p class="text-xs text-slate-500">Ollama <code class="text-slate-400">num_ctx</code> window for chat/generate requests. Bumps low client values up to this limit. Saved as <code class="text-slate-400">default_num_ctx</code> in client_config.json; falls back to <code class="text-slate-400">MTRXAI_DEFAULT_NUM_CTX</code> env when empty. Applies to Ollama-style backends (not llama.cpp server ctx-size).</p>
+        </div>
+        <div class="rounded-lg bg-slate-800/50 px-3 py-3 space-y-2">
+          <label class="block text-sm font-medium" for="defaultNumPredict">Default max output tokens</label>
+          <input id="defaultNumPredict" type="number" min="1" step="1"
+            x-model="settings.defaultNumPredict"
+            @change="saveDefaultNumPredict()"
+            placeholder="e.g. 8192"
+            class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm" />
+          <p class="text-xs text-slate-500">Ollama <code class="text-slate-400">num_predict</code> cap for chat/generate requests. Bumps low client values up to this limit. Saved as <code class="text-slate-400">default_num_predict</code> in client_config.json; falls back to <code class="text-slate-400">MTRXAI_DEFAULT_NUM_PREDICT</code> env when empty.</p>
+        </div>
+        <p x-show="settings.error" class="text-sm text-red-400" x-text="settings.error"></p>
+        <p x-show="settings.saving" class="text-sm text-slate-400">Saving…</p>
+      </div>
+    </div>
+
+    <!-- Add server modal -->
+    <div x-show="addServerModal.open" x-cloak
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+      @keydown.escape.window="closeAddServerModal()">
+      <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-4 space-y-4 shadow-xl"
+        @click.outside="closeAddServerModal()">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <h3 class="font-medium">Add LLM server</h3>
+            <p class="text-xs text-slate-500 mt-1">Discover on your network or enter a URL manually.</p>
+          </div>
+          <button @click="closeAddServerModal()" class="text-slate-400 hover:text-slate-200 text-sm">✕</button>
+        </div>
+        <div class="flex gap-2">
+          <button @click="scanLlm()" :disabled="llm.scanning"
+            class="rounded-lg bg-slate-800 px-3 py-1.5 text-xs hover:bg-slate-700 disabled:opacity-50"
+            x-text="llm.scanning ? 'Scanning…' : 'Scan network'"></button>
+        </div>
+        <div x-show="llm.scanning" class="text-slate-400 text-sm">Scanning local servers…</div>
+        <div class="space-y-2">
+          <div class="text-xs text-slate-500 uppercase tracking-wide">Discovered on network</div>
+          <ul class="space-y-2 text-sm">
+            <template x-for="srv in llm.servers" :key="srv.url">
+              <li class="flex items-center justify-between gap-3 rounded-lg bg-slate-800/50 px-3 py-2">
+                <div class="min-w-0">
+                  <div class="font-medium capitalize" x-text="srv.kind"></div>
+                  <div class="font-mono text-xs text-slate-400 truncate" x-text="srv.url"></div>
+                  <div class="text-xs text-slate-500 mt-0.5"><span x-text="srv.model_count"></span> models · <span x-text="srv.latency_ms"></span>ms</div>
+                </div>
+                <button @click="attachLlm(srv)"
+                  :class="isScanAttached(srv) ? 'bg-green-900/50 text-green-300' : 'bg-slate-700 hover:bg-slate-600'"
+                  class="shrink-0 rounded px-2 py-1 text-xs"
+                  x-text="isScanAttached(srv) ? 'Attached' : 'Attach'"></button>
+              </li>
+            </template>
+            <li x-show="!llm.scanning && !llm.servers.length" class="text-slate-500">No servers found on scan.</li>
+          </ul>
+        </div>
+        <div class="rounded-lg border border-slate-700/60 p-3 space-y-2">
+          <div class="text-xs text-slate-400">Add server manually</div>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <select x-model="llm.customKind" class="rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs">
+              <option value="ollama">Ollama</option>
+              <option value="inference-cell">inference-cell</option>
+              <option value="vllm">vLLM</option>
+              <option value="llamacpp">llama.cpp</option>
+              <option value="lmstudio">LM Studio</option>
+              <option value="localai">LocalAI</option>
+              <option value="tgi">TGI</option>
+              <option value="tensorrt">TensorRT</option>
+              <option value="custom">Custom endpoint</option>
+            </select>
+            <input x-model="llm.customUrl" :placeholder="llm.customKind === 'inference-cell' ? 'https://127.0.0.1:8443' : (llm.customKind === 'ollama' ? 'http://127.0.0.1:11434' : 'http://127.0.0.1:8000')"
+              class="min-w-0 flex-1 rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 font-mono text-xs" />
+            <input x-model="llm.customLabel" placeholder="Label (optional)"
+              class="min-w-0 flex-1 rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs" />
+            <button @click="addManualServer(false)" class="rounded-lg bg-blue-500 px-3 py-1.5 text-xs hover:bg-blue-600">Add</button>
+          </div>
+          <div x-show="llm.customKind === 'custom'" class="space-y-2 pt-2">
+            <input x-model="llm.customApiKey" type="password" placeholder="API key (optional)"
+              class="w-full rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs" />
+            <template x-for="(m, idx) in llm.customModels" :key="'modal-' + idx">
+              <div class="grid gap-2 sm:grid-cols-2">
+                <input x-model="m.id" placeholder="Model id (required)" class="rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs font-mono" />
+                <input x-model="m.name" placeholder="Display name (optional)" class="rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs" />
+                <input x-model="m.url" placeholder="Path override (optional)" class="sm:col-span-2 rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs font-mono" />
+                <label class="flex items-center gap-1 text-xs text-slate-400"><input type="checkbox" x-model="m.toolCalling" /> Tools</label>
+                <label class="flex items-center gap-1 text-xs text-slate-400"><input type="checkbox" x-model="m.vision" /> Vision</label>
+              </div>
+            </template>
+            <button @click="llm.customModels.push({ id: '', name: '', url: '', toolCalling: true, vision: false })"
+              class="text-xs text-blue-400 hover:text-blue-300">+ Add model</button>
+          </div>
+        </div>
+        <p x-show="llm.error" class="text-red-400 text-sm" x-text="llm.error"></p>
+      </div>
+    </div>
+
+    <!-- Catalog search modal (run model locally or on cluster) -->
+    <div x-show="catalogModal.open" x-cloak
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+      @keydown.escape.window="closeCatalogModal()">
+      <div class="w-full max-w-2xl sm:max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-4 space-y-4 shadow-xl"
+        @click.outside="closeCatalogModal()">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <h3 class="font-medium" x-text="catalogModal.mode === 'cluster' ? 'Run model on cluster' : 'Run model locally'"></h3>
+            <p class="text-xs text-slate-500 mt-1" x-show="catalogModal.mode === 'cluster'">
+              <span x-text="catalogModal.clusterName || 'Cluster'"></span>
+              <span class="font-mono" x-text="' · ' + (catalogModal.clusterId?.slice(0,8) || '')"></span>
+            </p>
+            <p class="text-xs text-slate-500 mt-1" x-show="catalogModal.mode === 'local' && catalogModal.catalogSource === 'ollama'">Search the Ollama library to pull and warm a model.</p>
+            <p class="text-xs text-slate-500 mt-1" x-show="catalogModal.mode === 'local' && catalogModal.catalogSource === 'huggingface'">Search Hugging Face GGUF models to pull into inference-cell.</p>
+          </div>
+          <button @click="closeCatalogModal()" class="text-slate-400 hover:text-slate-200 text-sm">✕</button>
+        </div>
+        <input x-model="catalogModal.query" @input.debounce.400ms="searchModelCatalog()"
+          placeholder="Search models (e.g. llama3, qwen)"
+          class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm" />
+        <div class="grid gap-3 sm:grid-cols-2" x-show="catalogModal.catalogSource === 'ollama'">
+          <div>
+            <label class="text-xs text-slate-500 block mb-1">Min VRAM (MB)</label>
+            <input x-model="catalogModal.minVramMb" @input.debounce.400ms="searchModelCatalog()" type="number" min="0" step="512"
+              placeholder="e.g. 4096"
+              class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-500 block mb-1">Max VRAM (MB)</label>
+            <input x-model="catalogModal.maxVramMb" @input.debounce.400ms="searchModelCatalog()" type="number" min="0" step="512"
+              placeholder="e.g. 8192"
+              class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2" x-show="catalogModal.catalogSource === 'ollama'">
+          <span class="text-xs text-slate-500 self-center">Min presets:</span>
+          <template x-for="gb in [4, 8, 16, 24]" :key="'cmin-' + gb">
+            <button type="button" @click="catalogModal.minVramMb = String(gb * 1024); searchModelCatalog()"
+              class="rounded-md bg-slate-800 border border-slate-700 px-2 py-1 text-xs hover:bg-slate-700"
+              x-text="gb + ' GB'"></button>
+          </template>
+        </div>
+        <div class="flex flex-wrap gap-2" x-show="catalogModal.catalogSource === 'ollama'">
+          <span class="text-xs text-slate-500 self-center">Max presets:</span>
+          <template x-for="gb in [4, 8, 16, 24]" :key="'cmax-' + gb">
+            <button type="button" @click="catalogModal.maxVramMb = String(gb * 1024); searchModelCatalog()"
+              class="rounded-md bg-slate-800 border border-slate-700 px-2 py-1 text-xs hover:bg-slate-700"
+              x-text="gb + ' GB'"></button>
+          </template>
+          <button type="button" @click="catalogModal.minVramMb = ''; catalogModal.maxVramMb = ''; searchModelCatalog()"
+            class="rounded-md bg-slate-800 border border-slate-700 px-2 py-1 text-xs hover:bg-slate-700">Clear VRAM</button>
+        </div>
+        <p x-show="catalogModal.searching" class="text-sm text-slate-400">Searching catalog…</p>
+        <p x-show="catalogModal.error" class="text-sm text-red-400" x-text="catalogModal.error"></p>
+        <ul class="space-y-2 max-h-[28rem] overflow-y-auto text-sm">
+          <template x-for="m in catalogModal.results" :key="m.name + (m.repo || '')">
+            <li class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg bg-slate-800/50 px-3 py-2">
+              <div class="min-w-0">
+                <div class="font-mono font-medium truncate" x-text="m.name"></div>
+                <div class="text-xs text-slate-500 truncate" x-text="m.description || '—'"></div>
+                <div class="text-xs text-slate-500 mt-0.5" x-show="catalogModal.catalogSource === 'ollama'">
+                  <span x-text="formatModelSize(m.size_bytes)"></span>
+                  · VRAM ~<span x-text="m.vram_estimate_mb"></span> MB
+                </div>
+                <div class="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-2" x-show="catalogModal.catalogSource === 'huggingface'">
+                  <label class="flex items-center gap-1">
+                    <span>Quant</span>
+                    <select x-model="m.selectedQuant" class="rounded bg-slate-900 border border-slate-700 px-1.5 py-0.5 font-mono">
+                      <template x-for="q in (m.quants || [])" :key="m.name + q">
+                        <option :value="q" x-text="q"></option>
+                      </template>
+                    </select>
+                  </label>
+                </div>
+              </div>
+              <button x-show="catalogModal.mode === 'local'" @click="runModelLocal(m)" :disabled="catalogModal.localRunning"
+                class="shrink-0 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs hover:bg-emerald-600 disabled:opacity-50">
+                Run local
+              </button>
+              <button x-show="catalogModal.mode === 'cluster'" @click="confirmCatalogClusterRun(m.name)" :disabled="catalogModal.requesting"
+                class="shrink-0 rounded-lg bg-blue-500 px-3 py-1.5 text-xs hover:bg-blue-600 disabled:opacity-50">
+                Request
+              </button>
+            </li>
+          </template>
+          <li x-show="!catalogModal.searching && (catalogModal.query || catalogModal.minVramMb || catalogModal.maxVramMb) && !catalogModal.results.length" class="text-slate-500">No models found</li>
+        </ul>
+      </div>
+    </div>
+
+    <main class="flex-1 mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 sm:py-8">
+      <!-- Step 1: Registration -->
+      <section x-show="!setup.complete && setup.step === 1" class="max-w-lg mx-auto space-y-6">
+        <h2 class="text-xl font-semibold">Welcome — register this device</h2>
+
+        <template x-if="lobbyConfig.peer_registration === 'invite_only'">
+          <div class="space-y-6">
+            <p class="text-slate-400">Enter the Peer ID and Service ID provided by your administrator.</p>
+            <div class="space-y-3">
+              <label class="block text-sm text-slate-300">Peer ID (UUID)</label>
+              <input x-model="reg.peerId" type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-white font-mono text-sm" />
+            </div>
+            <div class="space-y-3">
+              <label class="block text-sm text-slate-300">Service ID (UUID)</label>
+              <input x-model="reg.serviceId" type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-white font-mono text-sm" />
+            </div>
+          </div>
+        </template>
+
+        <template x-if="lobbyConfig.peer_registration !== 'invite_only'">
+          <div class="space-y-6">
+            <p class="text-slate-400">Connect this peer to the mtrxAI network. Do you already have a Service ID?</p>
+
+            <div class="flex gap-3">
+              <button @click="reg.hasService = true" :class="reg.hasService === true ? 'bg-blue-500' : 'bg-slate-800'"
+                class="flex-1 rounded-lg px-4 py-3 font-medium hover:bg-blue-600 transition">Yes, I have one</button>
+              <button @click="reg.hasService = false" :class="reg.hasService === false ? 'bg-blue-500' : 'bg-slate-800'"
+                class="flex-1 rounded-lg px-4 py-3 font-medium hover:bg-blue-600 transition">No, create new</button>
+            </div>
+
+            <div x-show="reg.hasService === true" class="space-y-3">
+              <label class="block text-sm text-slate-300">Service ID (UUID)</label>
+              <input x-model="reg.serviceId" type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-white" />
+            </div>
+          </div>
+        </template>
+
+        <div class="space-y-3">
+          <label class="block text-sm text-slate-300">Default public cluster (continent)</label>
+          <select x-model="reg.clusterName" class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-white">
+            <template x-for="c in publicClusters" :key="c.name">
+              <option :value="c.name" x-text="(c.continent || c.name) + ' (' + c.name + ')'"></option>
+            </template>
+          </select>
+          <p class="text-xs text-slate-500">Public clusters are visible to everyone. You can join additional clusters after setup.</p>
+        </div>
+
+        <button @click="doRegister()"
+          :disabled="reg.loading || (lobbyConfig.peer_registration === 'invite_only' ? (!reg.peerId || !reg.serviceId) : (reg.hasService === null || (reg.hasService && !reg.serviceId)))"
+          class="w-full rounded-lg bg-blue-500 px-4 py-3 font-medium hover:bg-blue-600 disabled:opacity-50">
+          <span x-text="reg.loading ? 'Registering…' : 'Continue'"></span>
+        </button>
+
+        <div x-show="reg.result" class="rounded-lg border border-green-700/50 bg-green-950/30 p-4 space-y-2">
+          <p class="font-medium text-green-300" x-show="reg.result?.created_new_service">Save your Service ID — you'll need it to add other devices:</p>
+          <p class="font-mono text-sm break-all" x-text="reg.result?.service_id"></p>
+          <p class="text-sm text-slate-400">Peer ID: <span class="font-mono" x-text="reg.result?.peer_id"></span></p>
+          <button @click="goToClusters()" class="mt-2 rounded-lg bg-blue-500 px-4 py-2 text-sm">Next: set up clusters</button>
+        </div>
+        <p x-show="reg.error" class="text-red-400 text-sm" x-text="reg.error"></p>
+      </section>
+
+      <!-- Step 2: clusters -->
+      <section x-show="!setup.complete && setup.step === 2" class="max-w-lg mx-auto space-y-6">
+        <h2 class="text-xl font-semibold">Clusters</h2>
+        <p class="text-slate-400">Join public continent clusters or add private clusters. You can belong to multiple clusters simultaneously.</p>
+
+        <div class="flex gap-2 flex-wrap">
+          <button @click="clusters.mode = 'public'" :class="clusters.mode === 'public' ? 'bg-blue-500' : 'bg-slate-800'"
+            class="flex-1 rounded-lg px-4 py-2 text-sm font-medium min-w-[7rem]">Join public</button>
+          <button @click="clusters.mode = 'private'" :class="clusters.mode === 'private' ? 'bg-blue-500' : 'bg-slate-800'"
+            class="flex-1 rounded-lg px-4 py-2 text-sm font-medium min-w-[7rem]">Join private</button>
+          <button @click="clusters.mode = 'create'" :class="clusters.mode === 'create' ? 'bg-blue-500' : 'bg-slate-800'"
+            class="flex-1 rounded-lg px-4 py-2 text-sm font-medium min-w-[7rem]">Create private</button>
+        </div>
+
+        <div x-show="clusters.mode === 'public'" class="space-y-3">
+          <label class="block text-sm text-slate-300">Public cluster</label>
+          <select x-model="clusters.publicName" class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-white">
+            <template x-for="c in publicClusters" :key="c.cluster_id">
+              <option :value="c.name" x-text="(c.continent || 'public') + ' — ' + c.name"></option>
+            </template>
+          </select>
+          <button @click="joinPublicCluster()" :disabled="clusters.loading || !clusters.publicName"
+            class="w-full rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium hover:bg-blue-600 disabled:opacity-50">
+            <span x-text="clusters.loading ? 'Joining…' : 'Join public cluster'"></span>
+          </button>
+        </div>
+
+        <div x-show="clusters.mode === 'private'" class="space-y-3">
+          <label class="block text-sm text-slate-300">Private cluster name</label>
+          <input x-model="clusters.privateName" type="text" placeholder="team-alpha"
+            class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-white" />
+          <label class="block text-sm text-slate-300">Cluster ID (UUID)</label>
+          <input x-model="clusters.privateId" type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-white font-mono text-sm" />
+          <button @click="joinPrivateCluster()" :disabled="clusters.loading || !clusters.privateName || !clusters.privateId"
+            class="w-full rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium hover:bg-blue-600 disabled:opacity-50">
+            <span x-text="clusters.loading ? 'Joining…' : 'Join private cluster'"></span>
+          </button>
+        </div>
+
+        <div x-show="clusters.mode === 'create'" class="space-y-3">
+          <label class="block text-sm text-slate-300">Private cluster name</label>
+          <input x-model="clusters.createName" type="text" placeholder="My team cluster"
+            class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-white" />
+          <button @click="createCluster()" :disabled="clusters.loading"
+            class="w-full rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium hover:bg-blue-600 disabled:opacity-50">
+            <span x-text="clusters.loading ? 'Creating…' : 'Create private cluster'"></span>
+          </button>
+        </div>
+
+        <div x-show="clusters.lastCreated" class="rounded-lg border border-green-700/50 bg-green-950/30 p-4 space-y-2">
+          <p class="text-sm text-green-300 font-medium">cluster created — share this ID:</p>
+          <p class="font-mono text-xs break-all" x-text="clusters.lastCreated"></p>
+          <button @click="copyText(clusters.lastCreated)" class="text-xs text-blue-400 hover:text-blue-300">Copy cluster ID</button>
+        </div>
+
+        <div class="rounded-xl border border-slate-700 p-4 space-y-2">
+          <h3 class="text-sm font-medium text-slate-300">Your clusters</h3>
+          <template x-for="r in clusters.list" :key="r.cluster_id">
+            <div class="flex items-center justify-between rounded-lg bg-slate-800/50 px-3 py-2 text-sm">
+              <div>
+                <div class="font-medium" x-text="r.name || 'Unnamed cluster'"></div>
+                <div class="font-mono text-xs text-slate-500" x-text="r.cluster_id"></div>
+              </div>
+              <button @click="removeCluster(r.cluster_id)" class="text-red-400 hover:text-red-300 text-xs">Remove</button>
+            </div>
+          </template>
+          <p x-show="!clusters.list.length" class="text-slate-500 text-sm">No clusters yet.</p>
+        </div>
+
+        <button @click="goToLlm()" :disabled="!clusters.list.length"
+          class="w-full rounded-lg bg-blue-500 px-4 py-3 font-medium hover:bg-blue-600 disabled:opacity-50">
+          Next: select LLM server
+        </button>
+        <p x-show="clusters.error" class="text-red-400 text-sm" x-text="clusters.error"></p>
+      </section>
+
+      <!-- Step 3: LLM selection -->
+      <section x-show="!setup.complete && setup.step === 3" class="space-y-6">
+        <h2 class="text-xl font-semibold">Attach local LLM servers</h2>
+        <p class="text-sm text-slate-400">Scan and attach one or more servers. You can add more from the dashboard later.</p>
+        <div class="flex gap-2">
+          <button @click="scanLlm()" class="rounded-lg bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700">Scan again</button>
+        </div>
+
+        <div x-show="llm.scanning" class="text-slate-400">Scanning local servers…</div>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <template x-for="srv in llm.servers" :key="srv.url">
+            <button @click="attachLlm(srv)"
+              class="text-left rounded-xl border border-slate-700 bg-slate-900/60 p-4 hover:border-blue-500 transition">
+              <div class="font-medium capitalize" x-text="srv.kind"></div>
+              <div class="text-sm text-slate-400 font-mono" x-text="srv.url"></div>
+              <div class="text-xs text-slate-500 mt-1"><span x-text="srv.model_count"></span> models · <span x-text="srv.latency_ms"></span>ms</div>
+              <div class="text-xs text-blue-400 mt-2" x-text="isScanAttached(srv) ? 'Attached' : 'Click to attach'"></div>
+            </button>
+          </template>
+        </div>
+
+        <div class="rounded-xl border border-slate-700 p-4 space-y-3">
+          <p class="text-sm text-slate-400">Or enter a custom URL:</p>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <select x-model="llm.customKind" class="w-full sm:w-auto rounded-lg bg-slate-900 border border-slate-700 px-3 py-2">
+              <option value="ollama">Ollama</option>
+              <option value="inference-cell">inference-cell</option>
+              <option value="vllm">vLLM</option>
+              <option value="llamacpp">llama.cpp</option>
+              <option value="lmstudio">LM Studio</option>
+              <option value="localai">LocalAI</option>
+              <option value="tgi">TGI</option>
+              <option value="tensorrt">TensorRT</option>
+              <option value="custom">Custom endpoint</option>
+            </select>
+            <input x-model="llm.customUrl" :placeholder="llm.customKind === 'inference-cell' ? 'https://127.0.0.1:8443' : 'http://127.0.0.1:11434'"
+              class="min-w-0 flex-1 rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 font-mono text-sm" />
+            <button @click="addManualServer(true)" class="w-full sm:w-auto shrink-0 rounded-lg bg-blue-500 px-4 py-2 text-sm">Attach</button>
+          </div>
+          <div x-show="llm.customKind === 'custom'" class="space-y-2 pt-2 border-t border-slate-700/60">
+            <input x-model="llm.customApiKey" type="password" placeholder="API key (optional)"
+              class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm" />
+            <template x-for="(m, idx) in llm.customModels" :key="idx">
+              <div class="grid gap-2 sm:grid-cols-2">
+                <input x-model="m.id" placeholder="Model id (required)" class="rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs font-mono" />
+                <input x-model="m.name" placeholder="Display name (optional)" class="rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs" />
+                <input x-model="m.url" placeholder="Path override (optional)" class="sm:col-span-2 rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs font-mono" />
+              </div>
+            </template>
+            <button @click="llm.customModels.push({ id: '', name: '', url: '', toolCalling: true, vision: false })"
+              class="text-xs text-blue-400 hover:text-blue-300">+ Add model</button>
+          </div>
+        </div>
+        <button @click="finishLlmSetup()" :disabled="!(status.attached_server_count > 0)"
+          class="w-full rounded-lg bg-blue-500 px-4 py-3 font-medium hover:bg-blue-600 disabled:opacity-50">
+          Finish setup
+        </button>
+        <p x-show="llm.error" class="text-red-400 text-sm" x-text="llm.error"></p>
+      </section>
+
+      <!-- Dashboard -->
+      <section x-show="setup.complete" class="space-y-6">
+        <nav class="flex gap-1 rounded-xl border border-slate-800 bg-slate-900/50 p-1">
+          <button @click="switchDashboardTab('local')"
+            :class="dashboardTab === 'local' ? 'bg-blue-500 text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'"
+            class="flex-1 rounded-lg px-4 py-2 text-sm font-medium transition">Local</button>
+          <button @click="switchDashboardTab('network')"
+            :class="dashboardTab === 'network' ? 'bg-blue-500 text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'"
+            class="flex-1 rounded-lg px-4 py-2 text-sm font-medium transition">Network</button>
+          <button @click="switchDashboardTab('activity')"
+            :class="dashboardTab === 'activity' ? 'bg-blue-500 text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'"
+            class="flex-1 rounded-lg px-4 py-2 text-sm font-medium transition">Activity</button>
+        </nav>
+
+        <!-- Incoming model start offers (local tab alert) -->
+        <div x-show="dashboardTab === 'local' && !status.auto_approve_run_model_request && (status.incoming_model_offers?.length > 0)"
+          class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 space-y-3">
+          <h3 class="font-medium text-amber-200">Incoming model start requests</h3>
+          <template x-for="offer in status.incoming_model_offers ?? []" :key="offer.req_id">
+            <div class="rounded-lg bg-slate-900/60 px-3 py-3 text-sm space-y-2">
+              <div class="flex flex-wrap justify-between gap-2">
+                <span class="font-mono font-medium" x-text="offer.model"></span>
+                <span class="text-xs text-slate-400" x-show="!offer.run_on_requester">from <span class="font-mono" x-text="offer.requested_by?.slice(0,8)"></span></span>
+                <span class="text-xs text-amber-300" x-show="offer.run_on_requester">run on this machine</span>
+              </div>
+              <p class="text-xs text-slate-400">Est. VRAM: <span x-text="offer.estimated_vram_mb"></span> MB</p>
+              <div class="flex gap-2">
+                <button @click="respondModelStart(offer, true)" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs hover:bg-emerald-500">Accept</button>
+                <button @click="respondModelStart(offer, false)" class="rounded-lg bg-slate-700 px-3 py-1.5 text-xs hover:bg-slate-600">Reject</button>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Incoming inference connection offers -->
+        <div x-show="dashboardTab === 'local' && !status.auto_approve_inference_connections && (status.incoming_connection_offers?.length > 0)"
+          class="rounded-xl border border-sky-500/40 bg-sky-500/10 p-4 space-y-3">
+          <h3 class="font-medium text-sky-200">Incoming inference connection requests</h3>
+          <template x-for="offer in status.incoming_connection_offers ?? []" :key="offer.req_id">
+            <div class="rounded-lg bg-slate-900/60 px-3 py-3 text-sm space-y-2">
+              <div class="flex flex-wrap justify-between gap-2">
+                <span class="font-mono font-medium" x-text="offer.model"></span>
+                <span class="text-xs text-slate-400">from <span class="font-mono" x-text="offer.requested_by?.slice(0,8)"></span></span>
+              </div>
+              <div class="flex gap-2">
+                <button @click="respondConnectionOffer(offer, true)" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs hover:bg-emerald-500">Accept</button>
+                <button @click="respondConnectionOffer(offer, false)" class="rounded-lg bg-slate-700 px-3 py-1.5 text-xs hover:bg-slate-600">Reject</button>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Local tab -->
+        <div x-show="dashboardTab === 'local'" class="space-y-6">
+          <div class="grid gap-6 lg:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4 text-sm space-y-2 lg:col-span-2">
+            <h3 class="font-medium text-base mb-3">Device</h3>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <p class="min-w-0 break-all">LLM servers: <span class="font-mono" x-text="status.attached_server_count ?? 0"></span> attached</p>
+              <p class="min-w-0 break-all">Service ID: <span class="font-mono text-xs" x-text="status.service_id"></span></p>
+              <p class="min-w-0 break-all sm:col-span-2">Peer ID: <span class="font-mono text-xs" x-text="status.peer_id"></span></p>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4 lg:col-span-2">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <h3 class="font-medium">Local hardware</h3>
+              <span x-show="status.gpu_host?.sampled_at_unix" class="text-xs text-slate-500"
+                x-text="'Updated ' + formatSampleTime(status.gpu_host?.sampled_at_unix)"></span>
+            </div>
+            <div x-show="status.gpu_host?.available" class="space-y-4 text-sm">
+              <div class="rounded-lg bg-slate-800/50 px-3 py-3 space-y-2">
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <div class="text-xs text-slate-400">GPU model</div>
+                    <div class="text-base font-semibold" x-text="status.gpu_host?.name || 'Unknown GPU'"></div>
+                  </div>
+                  <div class="text-right text-xs text-slate-500">
+                    <div x-show="status.gpu_host?.producer"><span x-text="status.gpu_host?.producer"></span></div>
+                    <div x-show="status.gpu_host?.architecture" x-text="status.gpu_host?.architecture"></div>
+                  </div>
+                </div>
+                <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-xs">
+                  <div><span class="text-slate-500">Driver</span> <span class="text-slate-200" x-text="status.gpu_host?.driver_version || '—'"></span></div>
+                  <div><span class="text-slate-500">Runtime</span> <span class="text-slate-200" x-text="gpuRuntimeLabel(status.gpu_host)"></span></div>
+                  <div><span class="text-slate-500">Devices</span> <span class="text-slate-200" x-text="status.gpu_host?.device_count ?? 1"></span></div>
+                  <div><span class="text-slate-500">Source</span> <span class="text-slate-200" x-text="status.gpu_host?.source || '—'"></span></div>
+                  <div><span class="text-slate-500">Temperature</span> <span class="text-slate-200"><span x-text="status.gpu_host?.temperature_c ?? '—'"></span><span x-show="status.gpu_host?.temperature_c">°C</span></span></div>
+                  <div><span class="text-slate-500">Power</span> <span class="text-slate-200"><span x-text="status.gpu_host?.power_draw_w ?? '—'"></span><span x-show="status.gpu_host?.power_draw_w"> W</span></span></div>
+                  <div><span class="text-slate-500">VRAM util</span> <span class="text-slate-200"><span x-text="status.gpu_host?.memory_utilization_pct ?? 0"></span>%</span></div>
+                  <div><span class="text-slate-500">GPU util</span> <span class="text-slate-200"><span x-text="status.gpu_host?.utilization_pct ?? 0"></span>%</span></div>
+                </div>
+              </div>
+
+              <div class="grid gap-3 sm:grid-cols-3">
+                <div class="rounded-lg bg-slate-800/50 px-3 py-2">
+                  <div class="text-xs text-slate-400">GPU utilization</div>
+                  <div class="text-lg font-semibold"><span x-text="status.gpu_host?.utilization_pct ?? 0"></span>%</div>
+                </div>
+                <div class="rounded-lg bg-slate-800/50 px-3 py-2">
+                  <div class="text-xs text-slate-400" x-text="gpuMemoryUsedLabel(status.gpu_host)">VRAM used</div>
+                  <div class="text-lg font-semibold"><span x-text="status.gpu_host?.memory_used_mb ?? 0"></span> MB</div>
+                </div>
+                <div class="rounded-lg bg-slate-800/50 px-3 py-2">
+                  <div class="text-xs text-slate-400" x-text="gpuMemoryTotalLabel(status.gpu_host)">VRAM free / total</div>
+                  <div class="text-lg font-semibold"><span x-text="status.gpu_host?.memory_free_mb ?? 0"></span> / <span x-text="status.gpu_host?.memory_total_mb ?? 0"></span> MB</div>
+                </div>
+              </div>
+
+              <div x-show="(status.gpu_host?.devices?.length ?? 0) > 1" class="space-y-2">
+                <div class="text-xs text-slate-400">Per-device details</div>
+                <template x-for="dev in status.gpu_host?.devices ?? []" :key="dev.index">
+                  <div class="rounded-lg bg-slate-800/40 px-3 py-2 text-xs grid gap-1 sm:grid-cols-2">
+                    <div class="font-medium text-slate-200" x-text="'#' + dev.index + ' · ' + dev.name"></div>
+                    <div class="text-slate-500 sm:text-right" x-text="(dev.temperature_c ?? '—') + '°C · ' + (dev.utilization_pct ?? 0) + '% · ' + dev.memory_used_mb + '/' + dev.memory_total_mb + ' MB'"></div>
+                  </div>
+                </template>
+              </div>
+
+              <div class="space-y-3">
+                <div class="flex items-center justify-between gap-2">
+                  <h4 class="text-sm font-medium">GPU metrics history</h4>
+                  <div class="flex gap-1 rounded-lg border border-slate-700 p-0.5 text-xs">
+                    <button @click="setGpuChartRange('short')" :class="gpuChartRange === 'short' ? 'bg-blue-500 text-white' : 'text-slate-400'"
+                      class="rounded-md px-2.5 py-1">10 min</button>
+                    <button @click="setGpuChartRange('long')" :class="gpuChartRange === 'long' ? 'bg-blue-500 text-white' : 'text-slate-400'"
+                      class="rounded-md px-2.5 py-1">1 hour</button>
+                  </div>
+                </div>
+                <div class="relative h-48 sm:h-56 w-full rounded-lg bg-slate-800/30 p-2 sm:p-3">
+                  <canvas x-ref="gpuChartCanvas" class="block h-full w-full"></canvas>
+                </div>
+                <p x-show="!gpuHistorySamples().length" class="text-xs text-amber-400/90">Collecting GPU samples — chart appears after the first reading.</p>
+                <p class="text-xs text-slate-500" x-text="gpuChartRange === 'short' ? 'Sampled every 10 seconds (last 10 minutes).' : 'Sampled every minute (last hour).'"></p>
+              </div>
+            </div>
+            <p x-show="!status.gpu_host?.available" class="text-slate-500 text-sm">No GPU detected or monitoring unavailable.</p>
+          </div>
+
+          <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4 space-y-3 lg:col-span-2">
+            <div class="flex flex-col gap-2 xs:flex-row xs:items-center xs:justify-between">
+              <h3 class="font-medium">Local LLM servers</h3>
+              <button @click="openAddServerModal()"
+                class="rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-medium hover:bg-blue-600 transition"
+                title="Add server">+ Add server</button>
+            </div>
+            <p x-show="status.attached_server_count > 0" class="text-sm text-slate-400">
+              <span x-text="status.attached_server_count"></span> server(s) attached to this peer
+            </p>
+
+            <div x-show="(status.llm_servers?.length ?? 0) > 0" class="space-y-2">
+              <ul class="space-y-2 text-sm">
+                <template x-for="srv in status.llm_servers ?? []" :key="srv.id">
+                  <li class="rounded-lg bg-slate-800/50 overflow-hidden">
+                    <div class="flex items-center justify-between gap-3 px-3 py-2">
+                      <div class="flex items-center gap-2 min-w-0">
+                        <button @click="toggleServerExpanded(srv.id)"
+                          class="shrink-0 rounded p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-700/60 transition"
+                          :title="expandedServers[srv.id] ? 'Collapse' : 'Expand models'">
+                          <svg class="h-4 w-4 transition-transform" :class="expandedServers[srv.id] ? 'rotate-90' : ''"
+                            fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                          </svg>
+                        </button>
+                        <div class="min-w-0">
+                          <div class="flex items-center gap-2 flex-wrap">
+                            <span class="font-medium capitalize" x-text="srv.kind"></span>
+                            <span x-show="srv.attached" class="rounded bg-green-900/40 px-1.5 py-0.5 text-[10px] text-green-300">attached</span>
+                            <span x-show="srv.attached && !srv.advertise_to_cluster" class="rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] text-amber-200" title="Models stay on this machine; not advertised to clusters">local only</span>
+                            <span x-show="srv.attached" class="text-[10px] text-slate-500" x-text="'#' + (srv.order + 1)"></span>
+                            <span x-show="srv.has_api_key" class="rounded bg-slate-700 px-1.5 py-0.5 text-[10px] text-slate-300">API key</span>
+                            <span x-show="srv.has_admin_token" class="rounded bg-slate-700 px-1.5 py-0.5 text-[10px] text-slate-300">Admin token</span>
+                          </div>
+                          <div class="font-mono text-xs text-slate-400 truncate" x-text="srv.url"></div>
+                          <div class="text-xs text-slate-500 mt-0.5" x-text="srv.model_count + ' models'"></div>
+                        </div>
+                      </div>
+                      <div class="flex shrink-0 gap-1 flex-wrap justify-end">
+                        <button x-show="llm.apiKeyEdit.serverId !== srv.id && llm.adminTokenEdit.serverId !== srv.id" @click="llm.apiKeyEdit = { serverId: srv.id, value: '' }"
+                          class="rounded bg-slate-700 px-2 py-1 text-xs hover:bg-slate-600">Key</button>
+                        <button x-show="isInferenceCellServer(srv) && llm.apiKeyEdit.serverId !== srv.id && llm.adminTokenEdit.serverId !== srv.id" @click="llm.adminTokenEdit = { serverId: srv.id, value: '' }"
+                          class="rounded bg-slate-700 px-2 py-1 text-xs hover:bg-slate-600">Admin</button>
+                        <button x-show="!srv.attached" @click="attachServer(srv.id)"
+                          class="rounded bg-slate-700 px-2 py-1 text-xs hover:bg-slate-600">Attach</button>
+                        <button x-show="srv.attached" @click="detachServer(srv.id)"
+                          class="rounded bg-amber-900/40 px-2 py-1 text-xs text-amber-200 hover:bg-amber-900/60">Detach</button>
+                        <button x-show="srv.attached" @click="toggleLocalOnly(srv)"
+                          class="rounded px-2 py-1 text-xs"
+                          :class="srv.advertise_to_cluster ? 'bg-slate-700 hover:bg-slate-600' : 'bg-amber-900/50 text-amber-100 hover:bg-amber-900/70'"
+                          :title="srv.advertise_to_cluster ? 'Hide this server from cluster advertisements' : 'Share this server with clusters'">
+                          <span x-text="srv.advertise_to_cluster ? 'Local only' : 'Share cluster'"></span>
+                        </button>
+                        <button @click="removeServer(srv.id)"
+                          class="rounded bg-red-900/40 px-2 py-1 text-xs text-red-300 hover:bg-red-900/60">Remove</button>
+                      </div>
+                    </div>
+                    <div x-show="expandedServers[srv.id]" class="border-t border-slate-700/60 px-3 py-3 space-y-3">
+                      <div class="flex flex-col sm:flex-row gap-2">
+                        <input x-model="localModelSearch[srv.id]" type="search" placeholder="Search models on this server…"
+                          class="min-w-0 flex-1 rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs" />
+                        <button @click="openCatalogModal('local', srv.id)"
+                          class="shrink-0 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs hover:bg-emerald-600">
+                          Run model
+                        </button>
+                      </div>
+                      <ul class="space-y-1 max-h-64 overflow-y-auto">
+                        <template x-for="m in filteredLocalModels(srv.id)" :key="m.name + (m._source_server || '')">
+                          <li class="flex justify-between items-center gap-2 rounded-lg bg-slate-900/60 px-3 py-2">
+                            <div class="min-w-0 flex items-center gap-1.5">
+                              <span class="truncate min-w-0" :class="m._status?.loaded ? 'text-emerald-400' : ''" x-text="m.name"></span>
+                              <span x-show="modelRuntimeBadge(m)"
+                                class="rounded bg-slate-700 px-1 py-0.5 text-[10px] shrink-0"
+                                :class="modelRuntimeBadgeClass(m)"
+                                :title="modelRuntimeTitle(m)"
+                                x-text="modelRuntimeBadge(m)"></span>
+                              <span x-show="modelCapabilityBadge(m)" class="rounded bg-slate-700 px-1 py-0.5 text-[10px] text-slate-300 shrink-0" x-text="modelCapabilityBadge(m)"></span>
+                            </div>
+                            <div class="flex items-center gap-1 shrink-0">
+                              <span x-show="m._source_kind" class="rounded bg-slate-700 px-1.5 py-0.5 text-[10px] capitalize text-slate-300 mr-1" x-text="m._source_kind"></span>
+                              <template x-if="m._source_kind === 'ollama'">
+                                <div class="flex items-center gap-0.5">
+                                  <button x-show="!m._status?.loaded && modelSupportsLoad(m)" type="button"
+                                    @click="loadLocalModel(m)"
+                                    :disabled="modelAction.name === m.name"
+                                    class="rounded p-1.5 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40"
+                                    title="Load model into memory">
+                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                      <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+                                    </svg>
+                                  </button>
+                                  <button x-show="m._status?.loaded && modelSupportsLoad(m)" type="button"
+                                    @click="unloadLocalModel(m)"
+                                    :disabled="modelAction.name === m.name"
+                                    class="rounded p-1.5 text-amber-400 hover:bg-amber-500/20 disabled:opacity-40"
+                                    title="Unload model from memory">
+                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                      <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z" />
+                                    </svg>
+                                  </button>
+                                  <button type="button"
+                                    @click="deleteLocalModel(m)"
+                                    :disabled="modelAction.name === m.name"
+                                    class="rounded p-1.5 text-red-400 hover:bg-red-500/20 disabled:opacity-40"
+                                    title="Delete model from disk">
+                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                      <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              </template>
+                            </div>
+                          </li>
+                        </template>
+                        <li x-show="!filteredLocalModels(srv.id).length" class="text-slate-500 text-xs py-1">No models on this server</li>
+                      </ul>
+                    </div>
+                  </li>
+                </template>
+              </ul>
+              <div x-show="llm.apiKeyEdit.serverId" class="rounded-lg border border-slate-700/60 p-3 space-y-2">
+                <div class="text-xs text-slate-400">Update API key</div>
+                <input x-model="llm.apiKeyEdit.value" type="password" placeholder="Leave empty to clear"
+                  class="w-full rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs" />
+                <div class="flex gap-2">
+                  <button @click="updateServerApiKey()" class="rounded bg-blue-500 px-2 py-1 text-xs">Save</button>
+                  <button @click="llm.apiKeyEdit = { serverId: '', value: '' }" class="rounded bg-slate-700 px-2 py-1 text-xs">Cancel</button>
+                </div>
+              </div>
+              <div x-show="llm.adminTokenEdit.serverId" class="rounded-lg border border-slate-700/60 p-3 space-y-2">
+                <div class="text-xs text-slate-400">Update inference-cell admin token (CELL_ADMIN_TOKEN)</div>
+                <input x-model="llm.adminTokenEdit.value" type="password" placeholder="Leave empty to clear"
+                  class="w-full rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs" />
+                <div class="flex gap-2">
+                  <button @click="updateServerAdminToken()" class="rounded bg-blue-500 px-2 py-1 text-xs">Save</button>
+                  <button @click="llm.adminTokenEdit = { serverId: '', value: '' }" class="rounded bg-slate-700 px-2 py-1 text-xs">Cancel</button>
+                </div>
+              </div>
+            </div>
+            <p x-show="!(status.llm_servers?.length)" class="text-slate-500 text-sm">No servers configured. Click + Add server to discover or add one.</p>
+
+            <div x-show="(status.local_model_collisions?.length ?? 0) > 0" class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200 space-y-1">
+              <div class="font-medium">Model name collisions (first server wins)</div>
+              <template x-for="c in status.local_model_collisions ?? []" :key="c.name + c.skipped_server">
+                <div x-text="c.name + ' — skipped on ' + c.skipped_server"></div>
+              </template>
+            </div>
+            <p x-show="llm.error" class="text-red-400 text-sm" x-text="llm.error"></p>
+          </div>
+
+          <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4 lg:col-span-2">
+            <h3 class="font-medium mb-3">Local runs</h3>
+            <p class="text-xs text-slate-500 mb-3">Models being pulled and warmed on this machine.</p>
+            <ul class="space-y-2 text-sm">
+              <template x-for="r in status.local_model_runs ?? []" :key="r.job_id">
+                <li class="rounded-lg bg-slate-800/50 px-3 py-2 space-y-1">
+                  <div class="flex justify-between gap-2">
+                    <span class="font-mono font-medium truncate" x-text="r.model"></span>
+                    <span class="text-xs shrink-0 px-2 py-0.5 rounded-full"
+                      :class="modelStartStatusClass(r.status)" x-text="r.status"></span>
+                  </div>
+                  <div class="text-xs text-slate-500" x-text="r.message || ''"></div>
+                  <div x-show="r.status === 'downloading' && r.progress_pct != null" class="h-1.5 rounded bg-slate-700 overflow-hidden">
+                    <div class="h-full bg-emerald-500 transition-all" :style="'width:' + (r.progress_pct || 0) + '%'"></div>
+                  </div>
+                </li>
+              </template>
+              <li x-show="!(status.local_model_runs?.length)" class="text-slate-500">No local runs yet</li>
+            </ul>
+          </div>
+          </div>
+        </div>
+
+        <!-- Network tab -->
+        <div x-show="dashboardTab === 'network'" class="space-y-6">
+          <div class="grid gap-6 xl:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+            <h3 class="font-medium mb-1">Network models</h3>
+            <p class="text-xs text-slate-500 mb-3">Unique models across all clusters (deduplicated).</p>
+            <input x-model="networkSearch" type="search" placeholder="Search network models…"
+              class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-1.5 text-sm mb-3" />
+            <ul class="space-y-2 max-h-80 overflow-y-auto text-sm">
+              <template x-for="m in filteredNetworkModels()" :key="m.name">
+                <li class="rounded-lg bg-slate-800/50 px-3 py-2 space-y-1">
+                  <div class="flex justify-between gap-2">
+                    <span class="font-medium truncate" x-text="m.name"></span>
+                    <span class="text-slate-400 text-xs shrink-0" x-text="modelPeerSummary(m)"></span>
+                  </div>
+                  <div class="text-xs text-slate-500" x-text="modelClusterSummary(m)"></div>
+                  <div x-show="modelGpuSummary(m)" class="text-xs text-slate-500" x-text="modelGpuSummary(m)"></div>
+                </li>
+              </template>
+              <li x-show="!(status.network_models?.length)" class="text-slate-500 text-sm">No remote models yet</li>
+              <li x-show="(status.network_models?.length) && !filteredNetworkModels().length" class="text-slate-500 text-sm">No models match your search</li>
+            </ul>
+          </div>
+
+        <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4 space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="font-medium">Clusters</h3>
+            <div class="flex gap-2">
+              <button @click="clusters.showPanel = !clusters.showPanel" class="text-sm text-blue-400 hover:text-blue-300"
+                x-text="clusters.showPanel ? 'Hide' : 'Add cluster'"></button>
+            </div>
+          </div>
+          <template x-for="r in status.clusters ?? []" :key="r.cluster_id">
+            <div class="rounded-lg bg-slate-800/50 px-3 py-3 text-sm space-y-2">
+              <div class="flex justify-between items-start gap-3">
+                <div>
+                  <div class="font-medium" x-text="r.name || 'Unnamed cluster'"></div>
+                  <div class="font-mono text-xs text-slate-500" x-text="r.cluster_id"></div>
+                </div>
+                <div class="text-right text-xs shrink-0">
+                  <span :class="r.lobby_connected ? 'text-green-400' : 'text-amber-400'"
+                    x-text="r.connected ? (r.lobby_connected ? 'connected' : 'connecting…') : 'disconnected'"></span>
+                  <div class="text-slate-500"><span x-text="r.inbound_peers"></span> in · <span x-text="r.outbound_peers"></span> out</div>
+                  <div x-show="!r.accepting_jobs" class="text-amber-400">maintenance</div>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-2 text-xs">
+                <button @click="openCatalogModal('cluster', r.cluster_id, r.name)"
+                  :disabled="!r.connected || !r.lobby_connected"
+                  class="rounded bg-blue-500 px-2 py-1 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Search and request a model on this cluster">Run model</button>
+                <button @click="toggleMaintenance(r)" class="rounded bg-slate-700 px-2 py-1 hover:bg-slate-600"
+                  x-text="r.accepting_jobs ? 'Pause jobs' : 'Resume jobs'"></button>
+                <button @click="r.connected ? disconnectCluster(r.cluster_id) : connectCluster(r.cluster_id)"
+                  class="rounded bg-slate-700 px-2 py-1 hover:bg-slate-600"
+                  x-text="r.connected ? 'Disconnect' : 'Connect'"></button>
+                <button @click="removeCluster(r.cluster_id)" class="rounded bg-red-900/50 px-2 py-1 text-red-300 hover:bg-red-900">Leave cluster</button>
+              </div>
+              <div x-show="(r.network_models?.length ?? 0) > 0" class="border-t border-slate-700/60 pt-2">
+                <div class="text-xs text-slate-400 mb-1">Models in this cluster</div>
+                <input x-model="clusterModelSearch[r.cluster_id]" type="search" placeholder="Search models…"
+                  class="w-full rounded bg-slate-900 border border-slate-700 px-2 py-1 text-xs mb-2" />
+                <ul class="space-y-1 max-h-32 overflow-y-auto">
+                  <template x-for="m in filteredClusterModels(r.network_models, r.cluster_id)" :key="m.name">
+                    <li class="flex justify-between gap-2 rounded bg-slate-900/60 px-2 py-1 text-xs">
+                      <span class="truncate" x-text="m.name"></span>
+                      <span class="text-slate-500 shrink-0" x-text="modelPeerSummary(m)"></span>
+                    </li>
+                  </template>
+                </ul>
+              </div>
+              <p x-show="r.lobby_connected && !(r.network_models?.length)" class="text-xs text-slate-500">No models advertised in this cluster yet.</p>
+            </div>
+          </template>
+          <div x-show="clusters.showPanel" class="border-t border-slate-700 pt-4 space-y-3">
+            <p class="text-xs text-slate-400">Join additional public or private clusters without leaving existing ones.</p>
+            <div class="flex gap-2 flex-wrap">
+              <button @click="clusters.mode = 'public'" :class="clusters.mode === 'public' ? 'bg-blue-500' : 'bg-slate-800'" class="rounded-lg px-3 py-2 text-xs">Public</button>
+              <button @click="clusters.mode = 'private'" :class="clusters.mode === 'private' ? 'bg-blue-500' : 'bg-slate-800'" class="rounded-lg px-3 py-2 text-xs">Private</button>
+              <button @click="clusters.mode = 'create'" :class="clusters.mode === 'create' ? 'bg-blue-500' : 'bg-slate-800'" class="rounded-lg px-3 py-2 text-xs">Create</button>
+            </div>
+            <div x-show="clusters.mode === 'public'" class="flex flex-col sm:flex-row gap-2">
+              <select x-model="clusters.publicName" class="min-w-0 flex-1 rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm">
+                <template x-for="c in publicClusters" :key="c.cluster_id">
+                  <option :value="c.name" x-text="c.name"></option>
+                </template>
+              </select>
+              <button @click="joinPublicCluster()" class="shrink-0 rounded-lg bg-blue-500 px-3 py-2 text-sm">Join</button>
+            </div>
+            <div x-show="clusters.mode === 'private'" class="space-y-2">
+              <input x-model="clusters.privateName" placeholder="Private cluster name" class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm" />
+              <div class="flex flex-col sm:flex-row gap-2">
+                <input x-model="clusters.privateId" placeholder="Cluster UUID" class="min-w-0 flex-1 rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm font-mono" />
+                <button @click="joinPrivateCluster()" class="shrink-0 rounded-lg bg-blue-500 px-3 py-2 text-sm">Join</button>
+              </div>
+            </div>
+            <div x-show="clusters.mode === 'create'" class="flex flex-col sm:flex-row gap-2">
+              <input x-model="clusters.createName" placeholder="Private cluster name" class="min-w-0 flex-1 rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm" />
+              <button @click="createCluster()" class="shrink-0 rounded-lg bg-blue-500 px-3 py-2 text-sm">Create</button>
+            </div>
+          </div>
+        </div>
+
+          <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4 xl:col-span-2">
+            <h3 class="font-medium mb-3">Cluster requests</h3>
+            <p class="text-xs text-slate-500 mb-3">Models requested on clusters from this peer.</p>
+            <ul class="space-y-2 text-sm">
+              <template x-for="r in status.model_start_requests ?? []" :key="r.req_id">
+                <li class="rounded-lg bg-slate-800/50 px-3 py-2 space-y-1">
+                  <div class="flex justify-between gap-2">
+                    <span class="font-mono font-medium truncate" x-text="r.model"></span>
+                    <span class="text-xs shrink-0 px-2 py-0.5 rounded-full"
+                      :class="modelStartStatusClass(r.status)"
+                      x-text="r.status"></span>
+                  </div>
+                  <div class="text-xs text-slate-500" x-text="r.message || ''"></div>
+                  <div x-show="r.status === 'downloading' && r.progress_pct != null" class="h-1.5 rounded bg-slate-700 overflow-hidden">
+                    <div class="h-full bg-blue-500 transition-all" :style="'width:' + (r.progress_pct || 0) + '%'"></div>
+                  </div>
+                  <div x-show="r.peers?.length" class="text-xs text-emerald-400">
+                    Already on: <span x-text="(r.peers || []).join(', ')"></span>
+                  </div>
+                </li>
+              </template>
+              <li x-show="!(status.model_start_requests?.length)" class="text-slate-500">No active requests</li>
+            </ul>
+          </div>
+
+          <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4 xl:col-span-2">
+            <h3 class="font-medium mb-3">Connected peers</h3>
+            <div x-show="(status.connections?.peers?.length ?? 0) > 0"
+              class="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400 rounded-lg bg-slate-800/40 px-3 py-2">
+              <span><span class="text-slate-500">Live </span><span class="text-emerald-300" x-text="formatRate(connectedPeerSummary().tokensPerSec) + ' tok/s'"></span></span>
+              <span><span class="text-slate-500">Active reqs </span><span x-text="connectedPeerSummary().activeRequests"></span></span>
+              <span x-show="connectedPeerSummary().warningPeers > 0"><span class="text-slate-500">Warnings </span><span class="text-amber-400" x-text="connectedPeerSummary().warningPeers"></span></span>
+            </div>
+            <div class="space-y-4">
+              <div>
+                <h4 class="text-sm font-medium text-slate-300 mb-2">Inbound (<span x-text="inboundPeers().length"></span>)</h4>
+                <ul class="space-y-2 text-sm">
+                  <template x-for="p in inboundPeers()" :key="p.peer_id + (p.cluster_id || p.swarm_id || '') + 'in'">
+                    <li class="flex flex-col gap-2 rounded-lg bg-slate-800/50 px-3 py-2">
+                      <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <span class="font-mono text-xs break-all" x-text="p.peer_id"></span>
+                        <span class="text-slate-400 text-xs shrink-0" x-text="peerNetworkLabel(p)"></span>
+                      </div>
+                      <div x-show="p.stats" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-1 text-xs text-slate-400 pt-1 border-t border-slate-700/50">
+                        <div><span class="text-slate-500">Live </span><span class="text-emerald-300" x-text="formatRate(p.stats.tokens_per_sec) + '/s'"></span></div>
+                        <div><span class="text-slate-500">Req/min </span><span x-text="formatRate(p.stats.requests_per_min, 1)"></span></div>
+                        <div><span class="text-slate-500">Active </span><span x-text="p.stats.active_requests ?? 0"></span></div>
+                        <div><span class="text-slate-500">Session </span><span x-text="formatTokens(p.stats.session_tokens)"></span></div>
+                        <div><span class="text-slate-500">Lifetime </span><span x-text="formatTokens(p.stats.lifetime_tokens)"></span></div>
+                        <div><span class="text-slate-500">In/out </span><span x-text="formatBytes(p.stats.bytes_received) + ' / ' + formatBytes(p.stats.bytes_sent)"></span></div>
+                        <div><span class="text-slate-500">Avg lat </span><span x-text="(p.stats.avg_duration_ms ?? 0) + 'ms'"></span></div>
+                        <div x-show="p.stats.last_model"><span class="text-slate-500">Model </span><span class="font-mono" x-text="p.stats.last_model"></span></div>
+                      </div>
+                      <div x-show="p.stats?.warnings?.length" class="flex flex-wrap gap-1">
+                        <template x-for="w in p.stats.warnings" :key="w">
+                          <span class="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                            :class="peerWarningClass(w)" :title="peerWarningLabel(w)" x-text="peerWarningLabel(w)"></span>
+                        </template>
+                      </div>
+                      <div class="flex flex-wrap gap-2">
+                        <span x-show="p.blocked" class="text-xs text-amber-400">Blocked</span>
+                        <button @click="blockPeer(p.peer_id)" :disabled="p.blocked"
+                          class="rounded-md bg-slate-700 px-2 py-1 text-xs hover:bg-slate-600 disabled:opacity-40">Block</button>
+                        <button @click="reportPeer(p.peer_id)"
+                          class="rounded-md bg-red-900/60 px-2 py-1 text-xs hover:bg-red-800/80">Report malicious</button>
+                      </div>
+                    </li>
+                  </template>
+                  <li x-show="!inboundPeers().length" class="text-slate-500">No inbound connections</li>
+                </ul>
+              </div>
+              <div>
+                <h4 class="text-sm font-medium text-slate-300 mb-2">Outbound (<span x-text="outboundPeers().length"></span>)</h4>
+                <ul class="space-y-2 text-sm">
+                  <template x-for="p in outboundPeers()" :key="p.peer_id + (p.cluster_id || p.swarm_id || '') + 'out'">
+                    <li class="flex flex-col gap-2 rounded-lg bg-slate-800/50 px-3 py-2">
+                      <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <span class="font-mono text-xs break-all" x-text="p.peer_id"></span>
+                        <span class="text-slate-400 text-xs shrink-0" x-text="peerNetworkLabel(p)"></span>
+                      </div>
+                      <div x-show="p.stats" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-1 text-xs text-slate-400 pt-1 border-t border-slate-700/50">
+                        <div><span class="text-slate-500">Live </span><span class="text-emerald-300" x-text="formatRate(p.stats.tokens_per_sec) + '/s'"></span></div>
+                        <div><span class="text-slate-500">Req/min </span><span x-text="formatRate(p.stats.requests_per_min, 1)"></span></div>
+                        <div><span class="text-slate-500">Active </span><span x-text="p.stats.active_requests ?? 0"></span></div>
+                        <div><span class="text-slate-500">Session </span><span x-text="formatTokens(p.stats.session_tokens)"></span></div>
+                        <div><span class="text-slate-500">Lifetime </span><span x-text="formatTokens(p.stats.lifetime_tokens)"></span></div>
+                        <div><span class="text-slate-500">In/out </span><span x-text="formatBytes(p.stats.bytes_received) + ' / ' + formatBytes(p.stats.bytes_sent)"></span></div>
+                        <div><span class="text-slate-500">Avg lat </span><span x-text="(p.stats.avg_duration_ms ?? 0) + 'ms'"></span></div>
+                        <div x-show="p.stats.last_model"><span class="text-slate-500">Model </span><span class="font-mono" x-text="p.stats.last_model"></span></div>
+                      </div>
+                      <div x-show="p.stats?.warnings?.length" class="flex flex-wrap gap-1">
+                        <template x-for="w in p.stats.warnings" :key="w">
+                          <span class="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                            :class="peerWarningClass(w)" :title="peerWarningLabel(w)" x-text="peerWarningLabel(w)"></span>
+                        </template>
+                      </div>
+                      <div class="flex flex-wrap gap-2">
+                        <span x-show="p.blocked" class="text-xs text-amber-400">Blocked</span>
+                        <button @click="blockPeer(p.peer_id)" :disabled="p.blocked"
+                          class="rounded-md bg-slate-700 px-2 py-1 text-xs hover:bg-slate-600 disabled:opacity-40">Block</button>
+                        <button @click="reportPeer(p.peer_id)"
+                          class="rounded-md bg-red-900/60 px-2 py-1 text-xs hover:bg-red-800/80">Report malicious</button>
+                      </div>
+                    </li>
+                  </template>
+                  <li x-show="!outboundPeers().length" class="text-slate-500">No outbound connections</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4 xl:col-span-2">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-medium">Blocked peers</h3>
+              <button @click="loadBlockedPeers()" class="text-xs text-slate-400 hover:text-slate-200">Refresh</button>
+            </div>
+            <ul class="space-y-2 text-sm">
+              <template x-for="b in blockedPeers" :key="b.peer_id">
+                <li class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-lg bg-slate-800/50 px-3 py-2">
+                  <div class="min-w-0">
+                    <span class="font-mono text-xs break-all" x-text="b.peer_id"></span>
+                    <div class="text-xs text-slate-500 mt-1" x-text="(b.source || 'local') + (b.reason ? ' · ' + b.reason : '')"></div>
+                  </div>
+                  <button @click="unblockPeer(b.peer_id)"
+                    class="shrink-0 rounded-md bg-slate-700 px-2 py-1 text-xs hover:bg-slate-600">Unblock</button>
+                </li>
+              </template>
+              <li x-show="!blockedPeers.length" class="text-slate-500">No blocked peers</li>
+            </ul>
+          </div>
+          </div>
+        </div>
+
+        <!-- Activity tab -->
+        <div x-show="dashboardTab === 'activity'" class="space-y-6">
+          <div class="flex flex-wrap gap-1 rounded-lg border border-slate-700 p-0.5 text-xs w-fit">
+            <template x-for="opt in statsRangeOptions" :key="opt.id">
+              <button type="button" @click="setStatsRange(opt.id)"
+                :class="activity.statsRange === opt.id ? 'bg-blue-500 text-white' : 'text-slate-400'"
+                class="rounded-md px-2.5 py-1" x-text="opt.label"></button>
+            </template>
+          </div>
+          <div class="grid gap-6 lg:grid-cols-2">
+            <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4 space-y-3">
+              <h3 class="font-medium">Credits by model</h3>
+              <div class="relative h-48 sm:h-56 w-full rounded-lg bg-slate-800/30 p-2 sm:p-3">
+                <canvas x-ref="txModelChartCanvas" class="max-h-full max-w-full"></canvas>
+              </div>
+              <p x-show="!(activity.stats?.by_model?.length)" class="text-xs text-slate-500">No settled transactions yet.</p>
+            </div>
+            <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4 space-y-3">
+              <h3 class="font-medium">Credits by peer</h3>
+              <div class="relative h-48 sm:h-56 w-full rounded-lg bg-slate-800/30 p-2 sm:p-3">
+                <canvas x-ref="txPeerChartCanvas" class="max-h-full max-w-full"></canvas>
+              </div>
+              <p x-show="!(activity.stats?.by_peer?.length)" class="text-xs text-slate-500">No settled transactions yet.</p>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-4 space-y-3">
+            <div class="flex flex-col gap-2 xs:flex-row xs:items-center xs:justify-between">
+              <h3 class="font-medium">Transaction history</h3>
+              <button @click="refreshActivity()" :disabled="activity.loading"
+                class="rounded-lg bg-slate-800 px-3 py-1.5 text-xs hover:bg-slate-700 disabled:opacity-50"
+                x-text="activity.loading ? 'Refreshing…' : 'Refresh'"></button>
+            </div>
+            <p x-show="activity.error" class="text-sm text-red-400" x-text="activity.error"></p>
+            <div class="overflow-x-auto rounded-lg border border-slate-800 max-h-[32rem] overflow-y-auto"
+              @scroll="onActivityScroll($event)">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-800/60 text-xs uppercase tracking-wide text-slate-400">
+                  <tr>
+                    <th class="px-3 py-2 text-left font-medium">Time</th>
+                    <th class="px-3 py-2 text-left font-medium">Role</th>
+                    <th class="px-3 py-2 text-left font-medium">Peer</th>
+                    <th class="px-3 py-2 text-left font-medium">Model</th>
+                    <th class="px-3 py-2 text-right font-medium">Tokens</th>
+                    <th class="px-3 py-2 text-right font-medium">Credits</th>
+                    <th class="px-3 py-2 text-left font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="tx in activity.transactions ?? []" :key="tx.req_id">
+                    <tr class="border-t border-slate-800/80 hover:bg-slate-800/30">
+                      <td class="px-3 py-2 text-xs text-slate-400 whitespace-nowrap" x-text="formatTxTime(tx)"></td>
+                      <td class="px-3 py-2 capitalize text-slate-300" x-text="tx.role"></td>
+                      <td class="px-3 py-2 font-mono text-xs text-slate-400" x-text="truncatePeer(tx.counterparty_peer_id)"></td>
+                      <td class="px-3 py-2 font-mono text-xs" x-text="tx.model || '—'"></td>
+                      <td class="px-3 py-2 text-right text-slate-300" x-text="tx.total_tokens ?? 0"></td>
+                      <td class="px-3 py-2 text-right font-medium"
+                        :class="tx.local_credit_delta < 0 ? 'text-red-400' : (tx.local_credit_delta > 0 ? 'text-emerald-400' : 'text-slate-500')"
+                        x-text="formatCreditDelta(tx.local_credit_delta)"></td>
+                      <td class="px-3 py-2">
+                        <span class="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                          :class="txStatusClass(tx.status)" x-text="tx.status"></span>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+            <p x-show="!(activity.transactions?.length)" class="text-sm text-slate-500">No peer transactions recorded yet.</p>
+            <p x-show="activity.loadingMore" class="text-xs text-slate-500 text-center py-2">Loading more…</p>
+            <p class="text-xs text-slate-500">Updates every 30 seconds while this tab is open. Scroll for older transactions.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    function mtrxaiApp() {
+      return {
+        setup: { complete: false, step: 1, has_peer: false, has_clusters: false, has_llm: false },
+        status: {},
+        dashboardTab: 'local',
+        subtitle: 'Loading…',
+        publicClusters: [],
+        reg: { hasService: null, peerId: '', serviceId: '', clusterName: 'europe', loading: false, error: '', result: null },
+        lobbyConfig: { peer_registration: 'open' },
+        clusters: { mode: 'public', createName: '', publicName: 'europe', privateName: '', privateId: '', list: [], loading: false, error: '', lastCreated: '', showPanel: false },
+        llm: {
+          servers: [], scanning: false, error: '',
+          customKind: 'ollama', customUrl: 'http://127.0.0.1:11434', customLabel: '',
+          customApiKey: '', customModels: [{ id: '', name: '', url: '', toolCalling: true, vision: false }],
+          apiKeyEdit: { serverId: '', value: '' },
+          adminTokenEdit: { serverId: '', value: '' },
+        },
+        catalogModal: {
+          open: false,
+          mode: 'local',
+          serverId: '',
+          catalogSource: 'ollama',
+          clusterId: '',
+          clusterName: '',
+          query: '',
+          minVramMb: '',
+          maxVramMb: '',
+          results: [],
+          searching: false,
+          requesting: false,
+          localRunning: false,
+          error: '',
+        },
+        addServerModal: { open: false },
+        expandedServers: {},
+        localModelSearch: {},
+        settings: {
+          autoApproveRunModelRequest: false,
+          autoApproveInferenceConnections: true,
+          ollamaTlsInsecure: false,
+          defaultNumPredict: '',
+          defaultNumCtx: '',
+          saving: false,
+          error: '',
+        },
+        settingsPanel: { open: false },
+        networkSearch: '',
+        clusterModelSearch: {},
+        modelAction: { name: '', kind: '' },
+        pollTimer: null,
+        activityPollTimer: null,
+        activity: {
+          transactions: [],
+          stats: { by_model: [], by_peer: [] },
+          loading: false,
+          loadingMore: false,
+          error: '',
+          offset: 0,
+          hasMore: true,
+          pageSize: 25,
+          statsRange: 'all',
+        },
+        statsRangeOptions: [
+          { id: '1h', label: '1h' },
+          { id: '1d', label: '1d' },
+          { id: '1w', label: '1w' },
+          { id: '1m', label: '1m' },
+          { id: '1y', label: '1y' },
+          { id: 'all', label: 'All' },
+        ],
+        blockedPeers: [],
+        gpuChartRange: 'short',
+        _gpuChart: null,
+        _txModelChart: null,
+        _txPeerChart: null,
+        _gpuChartResizeHandler: null,
+
+        scheduleTxChartsRender() {
+          this.$nextTick(() => {
+            requestAnimationFrame(() => this.renderTxCharts());
+          });
+        },
+
+        renderTxCharts() {
+          if (typeof Chart === 'undefined') return;
+          if (this.dashboardTab !== 'activity') return;
+
+          const barOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#9aa3b2', boxWidth: 12 } } },
+            scales: {
+              x: { ticks: { color: '#9aa3b2', maxRotation: 45, minRotation: 0 }, grid: { color: 'rgba(42,49,66,0.45)' } },
+              y: { ticks: { color: '#9aa3b2' }, grid: { color: 'rgba(42,49,66,0.45)' }, beginAtZero: true },
+            },
+          };
+
+          const modelCanvas = this.$refs.txModelChartCanvas;
+          const modelStats = this.activity.stats?.by_model ?? [];
+          if (modelCanvas) {
+            const labels = modelStats.map(s => s.model || '?');
+            const data = {
+              labels,
+              datasets: [
+                { label: 'Consumed', data: modelStats.map(s => s.consumed ?? 0), backgroundColor: 'rgba(248,113,113,0.75)' },
+                { label: 'Earned', data: modelStats.map(s => s.earned ?? 0), backgroundColor: 'rgba(52,211,153,0.75)' },
+              ],
+            };
+            if (this._txModelChart) {
+              this._txModelChart.data = data;
+              this._txModelChart.update('none');
+              this._txModelChart.resize();
+            } else if (labels.length) {
+              this._txModelChart = new Chart(modelCanvas, { type: 'bar', data, options: barOptions });
+            }
+          }
+
+          const peerCanvas = this.$refs.txPeerChartCanvas;
+          const peerStats = this.activity.stats?.by_peer ?? [];
+          if (peerCanvas) {
+            const labels = peerStats.map(s => this.truncatePeer(s.peer_id));
+            const data = {
+              labels,
+              datasets: [
+                { label: 'Consumed', data: peerStats.map(s => s.consumed ?? 0), backgroundColor: 'rgba(248,113,113,0.75)' },
+                { label: 'Earned', data: peerStats.map(s => s.earned ?? 0), backgroundColor: 'rgba(52,211,153,0.75)' },
+              ],
+            };
+            if (this._txPeerChart) {
+              this._txPeerChart.data = data;
+              this._txPeerChart.update('none');
+              this._txPeerChart.resize();
+            } else if (labels.length) {
+              this._txPeerChart = new Chart(peerCanvas, { type: 'bar', data, options: barOptions });
+            }
+          }
+        },
+
+        async refreshActivity(append = false) {
+          if (append) {
+            if (this.activity.loadingMore || !this.activity.hasMore) return;
+            this.activity.loadingMore = true;
+          } else {
+            this.activity.loading = true;
+            this.activity.offset = 0;
+            this.activity.hasMore = true;
+          }
+          this.activity.error = '';
+          try {
+            const limit = this.activity.pageSize;
+            const offset = append ? this.activity.transactions.length : 0;
+            const since = this.statsSinceUnix();
+            const statsParams = since ? '?since_unix=' + since : '';
+            const [txRes, statsRes] = await Promise.all([
+              fetch('/api/client/transactions?limit=' + limit + '&offset=' + offset),
+              append ? null : fetch('/api/client/transactions/stats' + statsParams),
+            ]);
+            if (!txRes.ok) throw new Error(await txRes.text());
+            const batch = await txRes.json();
+            if (append) {
+              this.activity.transactions = [...this.activity.transactions, ...batch];
+            } else {
+              this.activity.transactions = batch;
+              if (statsRes) {
+                if (!statsRes.ok) throw new Error(await statsRes.text());
+                this.activity.stats = await statsRes.json();
+              }
+              this.scheduleTxChartsRender();
+            }
+            this.activity.hasMore = batch.length >= limit;
+          } catch (e) {
+            this.activity.error = e.message || 'Failed to load activity';
+          } finally {
+            this.activity.loading = false;
+            this.activity.loadingMore = false;
+          }
+        },
+
+        statsSinceUnix() {
+          const now = Math.floor(Date.now() / 1000);
+          const ranges = { '1h': 3600, '1d': 86400, '1w': 604800, '1m': 2592000, '1y': 31536000 };
+          const secs = ranges[this.activity.statsRange];
+          return secs ? now - secs : null;
+        },
+
+        async setStatsRange(range) {
+          this.activity.statsRange = range;
+          await this.refreshActivity();
+        },
+
+        onActivityScroll(e) {
+          const el = e.target;
+          if (el.scrollTop + el.clientHeight >= el.scrollHeight * 0.8) {
+            this.refreshActivity(true);
+          }
+        },
+
+        startActivityPolling() {
+          this.stopActivityPolling();
+          this.refreshActivity();
+          this.activityPollTimer = setInterval(() => this.refreshActivity(), 30000);
+        },
+
+        stopActivityPolling() {
+          if (this.activityPollTimer) {
+            clearInterval(this.activityPollTimer);
+            this.activityPollTimer = null;
+          }
+        },
+
+        formatSampleTime(ts) {
+          if (!ts) return '';
+          return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        },
+
+        filteredNetworkModels() {
+          const q = (this.networkSearch || '').trim().toLowerCase();
+          const list = this.status.network_models ?? [];
+          if (!q) return list;
+          return list.filter(m => (m.name || '').toLowerCase().includes(q));
+        },
+
+        filteredClusterModels(models, clusterId) {
+          const q = ((this.clusterModelSearch[clusterId] || '')).trim().toLowerCase();
+          const list = models ?? [];
+          if (!q) return list;
+          return list.filter(m => (m.name || '').toLowerCase().includes(q));
+        },
+
+        filteredLocalModels(serverId) {
+          const q = ((this.localModelSearch[serverId] || '')).trim().toLowerCase();
+          const list = (this.status.local_models ?? []).filter(m => (m._source_server || '') === serverId);
+          if (!q) return list;
+          return list.filter(m => (m.name || '').toLowerCase().includes(q));
+        },
+
+        toggleServerExpanded(serverId) {
+          this.expandedServers = { ...this.expandedServers, [serverId]: !this.expandedServers[serverId] };
+        },
+
+        async openAddServerModal() {
+          this.addServerModal.open = true;
+          this.llm.error = '';
+          if (!this.llm.servers.length && !this.llm.scanning) {
+            await this.scanLlm();
+          }
+        },
+
+        closeAddServerModal() {
+          this.addServerModal.open = false;
+        },
+
+        isInferenceCellServer(srv) {
+          const kind = (srv?.kind || '').toLowerCase();
+          return kind === 'inference-cell' || kind === 'inference_cell';
+        },
+
+        catalogSourceForServer(serverId) {
+          const srv = (this.status.llm_servers ?? []).find(s => s.id === serverId);
+          if (!srv) return 'ollama';
+          if (srv.catalog_source) return srv.catalog_source;
+          if (this.isInferenceCellServer(srv)) {
+            return srv.inference_engine === 'ollama' ? 'ollama' : 'huggingface';
+          }
+          return 'ollama';
+        },
+
+        openCatalogModal(mode, idOrClusterId, clusterName) {
+          const serverId = mode === 'local' ? (idOrClusterId || '') : '';
+          this.catalogModal = {
+            open: true,
+            mode,
+            serverId,
+            catalogSource: serverId ? this.catalogSourceForServer(serverId) : 'ollama',
+            clusterId: mode === 'cluster' ? (idOrClusterId || '') : '',
+            clusterName: mode === 'cluster' ? (clusterName || '') : '',
+            query: '',
+            minVramMb: '',
+            maxVramMb: '',
+            results: [],
+            searching: false,
+            requesting: false,
+            localRunning: false,
+            error: '',
+          };
+        },
+
+        closeCatalogModal() {
+          this.catalogModal.open = false;
+        },
+
+        inboundPeers() {
+          return (this.status.connections?.peers ?? []).filter(p => p.direction === 'inbound');
+        },
+
+        outboundPeers() {
+          return (this.status.connections?.peers ?? []).filter(p => p.direction === 'outbound');
+        },
+
+        connectedPeerSummary() {
+          const peers = this.status.connections?.peers ?? [];
+          let tokensPerSec = 0;
+          let activeRequests = 0;
+          let warningPeers = 0;
+          for (const p of peers) {
+            const s = p.stats;
+            if (!s) continue;
+            tokensPerSec += s.tokens_per_sec ?? 0;
+            activeRequests += s.active_requests ?? 0;
+            if ((s.warnings?.length ?? 0) > 0) warningPeers++;
+          }
+          return { tokensPerSec, activeRequests, warningPeers };
+        },
+
+        peerNetworkLabel(p) {
+          const net = p.cluster_id
+            ? 'cluster ' + p.cluster_id.slice(0, 8)
+            : p.swarm_id
+              ? 'swarm ' + p.swarm_id.slice(0, 8)
+              : '';
+          return (net ? net + ' · ' : '') + (p.since_secs ?? 0) + 's';
+        },
+
+        peerWarningLabel(code) {
+          const map = {
+            high_request_rate: 'High req rate',
+            token_mismatch: 'Token mismatch',
+            high_error_rate: 'High errors',
+            large_payload: 'Large payload',
+            slow_response: 'Slow response',
+          };
+          return map[code] || code;
+        },
+
+        peerWarningClass(code) {
+          return code === 'token_mismatch'
+            ? 'text-red-400 bg-red-500/10 border border-red-500/20'
+            : 'text-amber-400 bg-amber-500/10 border border-amber-500/20';
+        },
+
+        formatTokens(n) {
+          const v = Number(n) || 0;
+          if (v >= 1_000_000) return (v / 1_000_000).toFixed(1) + 'M';
+          if (v >= 1_000) return (v / 1_000).toFixed(1) + 'k';
+          return String(Math.round(v));
+        },
+
+        formatBytes(n) {
+          const v = Number(n) || 0;
+          if (v >= 1024 * 1024) return (v / (1024 * 1024)).toFixed(1) + ' MB';
+          if (v >= 1024) return (v / 1024).toFixed(1) + ' KB';
+          return v + ' B';
+        },
+
+        formatRate(n, digits = 2) {
+          const v = Number(n) || 0;
+          if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
+          return v.toFixed(digits);
+        },
+
+        updateStatusPollInterval() {
+          if (this.pollTimer) {
+            clearInterval(this.pollTimer);
+            this.pollTimer = null;
+          }
+          if (!this.setup.complete) return;
+          const ms = this.dashboardTab === 'network' ? 3000 : 10000;
+          this.pollTimer = setInterval(() => this.refreshStatus(), ms);
+        },
+
+        async deleteLocalModel(m) {
+          const name = m.name;
+          if (m._status?.loaded) {
+            if (!confirm('Model "' + name + '" is currently running. Deleting will unload it. Continue?')) return;
+          }
+          await this.postLocalModelAction(name, 'delete');
+        },
+
+        modelCapabilities(m) {
+          const caps = m?._show_info?.capabilities;
+          return Array.isArray(caps) ? caps.filter(c => typeof c === 'string') : [];
+        },
+
+        modelCapabilityBadge(m) {
+          const caps = this.modelCapabilities(m);
+          if (!caps.length) return '';
+          if (caps.includes('embedding') && !caps.includes('completion')) return 'embedding';
+          if (caps.includes('completion')) return 'generate';
+          return caps[0] || '';
+        },
+
+        modelRuntimeBadge(m) {
+          const s = m?._status;
+          if (!s?.loaded) return '';
+          const gpu = s.gpu_pct ?? 0;
+          const cpu = s.cpu_pct ?? 0;
+          if (s.processor === 'gpu' || gpu === 100) return `GPU ${gpu}%`;
+          if (s.processor === 'cpu' || gpu === 0) return `CPU ${cpu}%`;
+          return `GPU ${gpu}% · CPU ${cpu}%`;
+        },
+
+        modelRuntimeBadgeClass(m) {
+          const s = m?._status;
+          if (!s?.loaded) return 'text-slate-300';
+          const gpu = s.gpu_pct ?? 0;
+          if (s.processor === 'gpu' || gpu === 100) return 'text-blue-300';
+          if (s.processor === 'cpu' || gpu === 0) return 'text-slate-300';
+          return 'text-violet-300';
+        },
+
+        modelRuntimeTitle(m) {
+          const s = m?._status;
+          if (!s?.loaded) return '';
+          const parts = [`Processor: ${s.processor || 'unknown'}`];
+          if (s.size_vram != null && s.size != null) {
+            const vramMb = Math.round(s.size_vram / (1024 * 1024));
+            const totalMb = Math.round(s.size / (1024 * 1024));
+            parts.push(`VRAM: ${vramMb}/${totalMb} MB`);
+          }
+          return parts.join(' · ');
+        },
+
+        modelSupportsLoad(m) {
+          const caps = this.modelCapabilities(m);
+          if (!caps.length) return true;
+          return caps.includes('completion') || caps.includes('embedding');
+        },
+
+        async loadLocalModel(m) {
+          await this.postLocalModelAction(m.name, 'load');
+        },
+
+        async unloadLocalModel(m) {
+          await this.postLocalModelAction(m.name, 'unload');
+        },
+
+        async postLocalModelAction(name, action) {
+          this.modelAction = { name, kind: action };
+          try {
+            const url = action === 'delete'
+              ? '/api/client/models/' + encodeURIComponent(name)
+              : '/api/client/models/' + encodeURIComponent(name) + '/' + action;
+            const r = await fetch(url, { method: action === 'delete' ? 'DELETE' : 'POST' });
+            if (!r.ok) throw new Error(await r.text() || action + ' failed');
+            await this.refreshStatus();
+          } catch (e) {
+            alert('Failed to ' + action + ' model: ' + (e.message || e));
+          } finally {
+            this.modelAction = { name: '', kind: '' };
+          }
+        },
+
+        truncatePeer(id) {
+          if (!id) return '—';
+          if (id.length <= 12) return id;
+          return id.slice(0, 8) + '…';
+        },
+
+        formatCreditDelta(delta) {
+          if (!delta) return '0';
+          return delta > 0 ? '+' + delta : String(delta);
+        },
+
+        formatTxTime(tx) {
+          const ts = tx.settled_at_unix || tx.reported_at_unix || 0;
+          if (!ts) return '—';
+          return new Date(ts * 1000).toLocaleString([], {
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+          });
+        },
+
+        txStatusClass(status) {
+          const map = {
+            settled: 'bg-emerald-500/20 text-emerald-300',
+            pending: 'bg-amber-500/20 text-amber-300',
+            mismatched: 'bg-red-500/20 text-red-300',
+            rejected: 'bg-red-500/20 text-red-300',
+          };
+          return map[status] || 'bg-slate-500/20 text-slate-300';
+        },
+
+        gpuHistorySamples() {
+          const hist = this.status.gpu_history || {};
+          return this.gpuChartRange === 'short' ? (hist.short || []) : (hist.long || []);
+        },
+
+        scheduleGpuChartRender() {
+          this.$nextTick(() => {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => this.renderGpuChart());
+            });
+          });
+        },
+
+        destroyGpuChart() {
+          if (this._gpuChart) {
+            this._gpuChart.destroy();
+            this._gpuChart = null;
+          }
+        },
+
+        gpuChartOptions(hasTemp) {
+          return {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { labels: { color: '#9aa3b2', boxWidth: 12 } },
+              tooltip: {
+                enabled: true,
+                mode: 'index',
+                intersect: false,
+                callbacks: {
+                  label(ctx) {
+                    const label = ctx.dataset.label || '';
+                    const value = ctx.formattedValue ?? ctx.parsed?.y;
+                    return value != null && value !== '' ? `${label}: ${value}` : label;
+                  },
+                },
+              },
+            },
+            scales: {
+              x: { ticks: { color: '#6b7280', maxTicksLimit: 8 }, grid: { color: 'rgba(42,49,66,0.5)' } },
+              y: {
+                position: 'left',
+                title: { display: true, text: 'GPU %', color: '#9aa3b2' },
+                min: 0,
+                max: 100,
+                ticks: { color: '#6b7280' },
+                grid: { color: 'rgba(42,49,66,0.5)' },
+              },
+              y1: {
+                position: 'right',
+                title: { display: true, text: 'VRAM MB', color: '#9aa3b2' },
+                ticks: { color: '#6b7280' },
+                grid: { drawOnChartArea: false },
+              },
+              y2: {
+                display: hasTemp,
+                position: 'right',
+                title: { display: true, text: '°C', color: '#9aa3b2' },
+                min: 0,
+                suggestedMax: 100,
+                ticks: { color: '#6b7280' },
+                grid: { drawOnChartArea: false },
+              },
+            },
+          };
+        },
+
+        renderGpuChart() {
+          if (typeof Chart === 'undefined') return;
+          if (this.dashboardTab !== 'local') return;
+          const canvas = this.$refs.gpuChartCanvas;
+          if (!canvas || !this.status.gpu_host?.available) {
+            this.destroyGpuChart();
+            return;
+          }
+
+          const samples = this.gpuHistorySamples();
+          const labels = samples.map(s => {
+            const d = new Date((s.ts_unix || 0) * 1000);
+            return this.gpuChartRange === 'short'
+              ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+              : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          });
+          const hasTemp = samples.some(s => s.temperature_c != null);
+          const gpuData = samples.map(s => s.utilization_pct ?? 0);
+          const vramData = samples.map(s => s.memory_used_mb ?? 0);
+          const tempData = samples.map(s => s.temperature_c ?? null);
+
+          if (this._gpuChart) {
+            const chart = this._gpuChart;
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = gpuData;
+            chart.data.datasets[1].data = vramData;
+            if (hasTemp) {
+              if (chart.data.datasets.length < 3) {
+                chart.data.datasets.push({
+                  label: 'Temp °C',
+                  data: tempData,
+                  borderColor: '#f87171',
+                  backgroundColor: 'rgba(248,113,113,0.12)',
+                  tension: 0.25,
+                  yAxisID: 'y2',
+                });
+              } else {
+                chart.data.datasets[2].data = tempData;
+              }
+              if (chart.options.scales?.y2) {
+                chart.options.scales.y2.display = true;
+              }
+            } else if (chart.data.datasets.length > 2) {
+              chart.data.datasets.splice(2, 1);
+              if (chart.options.scales?.y2) {
+                chart.options.scales.y2.display = false;
+              }
+            }
+            chart.update();
+            chart.resize();
+            return;
+          }
+
+          if (!samples.length) return;
+
+          const datasets = [
+            {
+              label: 'GPU %',
+              data: gpuData,
+              borderColor: '#3b82f6',
+              backgroundColor: 'rgba(96,165,250,0.12)',
+              tension: 0.25,
+              yAxisID: 'y',
+            },
+            {
+              label: 'VRAM MB',
+              data: vramData,
+              borderColor: '#34d399',
+              backgroundColor: 'rgba(52,211,153,0.12)',
+              tension: 0.25,
+              yAxisID: 'y1',
+            },
+          ];
+          if (hasTemp) {
+            datasets.push({
+              label: 'Temp °C',
+              data: tempData,
+              borderColor: '#f87171',
+              backgroundColor: 'rgba(248,113,113,0.12)',
+              tension: 0.25,
+              yAxisID: 'y2',
+            });
+          }
+
+          this._gpuChart = new Chart(canvas, {
+            type: 'line',
+            data: { labels, datasets },
+            options: this.gpuChartOptions(hasTemp),
+          });
+        },
+
+        setGpuChartRange(range) {
+          this.gpuChartRange = range;
+          this.scheduleGpuChartRender();
+        },
+
+        uniqueNetworkModelCount() {
+          return this.status.network_models?.length ?? 0;
+        },
+
+        modelPeerSummary(m) {
+          const peers = m._peer_count ?? (m._peers?.length ?? 1);
+          const loaded = m._loaded_count ?? 0;
+          if (loaded > 0) return `${loaded}/${peers} loaded`;
+          return `${peers} peer${peers === 1 ? '' : 's'}`;
+        },
+
+        modelClusterSummary(m) {
+          const clusters = m._clusters ?? [];
+          if (!clusters.length) {
+            const cid = m._cluster_id?.slice(0, 8);
+            return cid ? `cluster ${cid}` : '';
+          }
+          const names = clusters.map(c => {
+            const cfg = (this.status.clusters ?? []).find(r => r.cluster_id === c.cluster_id);
+            const label = cfg?.name || c.cluster_id?.slice(0, 8) || '?';
+            const n = c.peer_count ?? 0;
+            return `${label} (${n})`;
+          });
+          return 'In: ' + names.join(', ');
+        },
+
+        fmtGpu(g) {
+          if (!g?.available) return '';
+          const parts = [];
+          if (g.name) parts.push(g.name);
+          if (g.producer && g.architecture) parts.push(`${g.producer} ${g.architecture}`);
+          else if (g.producer) parts.push(g.producer);
+          const stats = `${g.utilization_pct ?? 0}% util · ${g.memory_used_mb ?? 0}/${g.memory_total_mb ?? 0} MB`;
+          if (g.temperature_c != null) return `${parts.join(' · ') || 'GPU'} · ${stats} · ${g.temperature_c}°C`;
+          return `${parts.join(' · ') || 'GPU'} · ${stats}`;
+        },
+
+        gpuRuntimeLabel(g) {
+          if (!g) return '—';
+          if (g.cuda_version) return g.cuda_version;
+          if (g.producer === 'Apple' || (g.source || '').includes('apple')) return 'Metal';
+          if (g.producer === 'AMD' || (g.source || '').includes('amd') || (g.source || '').includes('rocm')) {
+            return g.driver_version ? `ROCm (${g.driver_version})` : 'ROCm';
+          }
+          return '—';
+        },
+
+        gpuMemoryUsedLabel(g) {
+          return g?.producer === 'Apple' ? 'GPU memory used (unified)' : 'VRAM used';
+        },
+
+        gpuMemoryTotalLabel(g) {
+          return g?.producer === 'Apple' ? 'GPU memory free / total (unified)' : 'VRAM free / total';
+        },
+
+        modelGpuSummary(m) {
+          const peers = m._peers ?? (m._peer ? [m._peer] : []);
+          const gpus = peers
+            .map(p => p.gpu_host)
+            .filter(g => g?.available);
+          if (!gpus.length) return '';
+          const unique = [...new Map(gpus.map(g => [g.name || `${g.memory_total_mb}MB`, g])).values()];
+          if (unique.length === 1) return 'GPU: ' + this.fmtGpu(unique[0]);
+          return `GPUs: ${unique.map(g => this.fmtGpu(g)).join(' · ')}`;
+        },
+
+        async init() {
+          this._gpuChartResizeHandler = () => {
+            this._gpuChart?.resize();
+            this._txModelChart?.resize();
+            this._txPeerChart?.resize();
+          };
+          window.addEventListener('resize', this._gpuChartResizeHandler);
+
+          this.$watch(
+            () => {
+              const hist = this.status.gpu_history || {};
+              const samples = this.gpuChartRange === 'short' ? (hist.short || []) : (hist.long || []);
+              const last = samples.length ? samples[samples.length - 1] : null;
+              return `${this.gpuChartRange}:${samples.length}:${last?.ts_unix ?? 0}:${last?.utilization_pct ?? ''}`;
+            },
+            () => {
+              if (this.dashboardTab === 'local') this.scheduleGpuChartRender();
+            },
+          );
+
+          await this.loadLobbyConfig();
+          await this.loadPublicClusters();
+          await this.refreshSetup();
+          await this.refreshClusters();
+          if (this.setup.complete) {
+            await this.refreshStatus();
+            await this.loadBlockedPeers();
+            await this.scanLlm();
+            this.updateStatusPollInterval();
+            this.subtitle = 'Dashboard';
+            this.scheduleGpuChartRender();
+          } else if (this.setup.step === 3) {
+            this.subtitle = 'Select LLM server';
+            await this.scanLlm();
+          } else if (this.setup.step === 2) {
+            this.subtitle = 'Set up clusters';
+          } else {
+            this.subtitle = 'First-time setup';
+          }
+        },
+
+        async loadLobbyConfig() {
+          try {
+            const r = await fetch('/api/client/lobby-config');
+            if (r.ok) {
+              this.lobbyConfig = await r.json();
+            }
+          } catch (_) {}
+        },
+
+        async loadPublicClusters() {
+          try {
+            const r = await fetch('/api/client/clusters/public');
+            this.publicClusters = await r.json();
+            if (this.publicClusters.length && !this.reg.clusterName) {
+              this.reg.clusterName = this.publicClusters[0].name;
+              this.clusters.publicName = this.publicClusters[0].name;
+            }
+          } catch (_) {}
+        },
+
+        async refreshSetup() {
+          const r = await fetch('/api/client/setup');
+          this.setup = await r.json();
+        },
+
+        async refreshClusters() {
+          const r = await fetch('/api/client/clusters');
+          const data = await r.json();
+          this.clusters.list = data.clusters ?? [];
+        },
+
+        async loadBlockedPeers() {
+          try {
+            const r = await fetch('/api/client/peers/blocked');
+            if (!r.ok) return;
+            const data = await r.json();
+            this.blockedPeers = data.peers ?? [];
+          } catch (_) {}
+        },
+
+        async blockPeer(peerId) {
+          if (!peerId) return;
+          try {
+            const r = await fetch(`/api/client/peers/${encodeURIComponent(peerId)}/block`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({}),
+            });
+            if (!r.ok) throw new Error('Block failed');
+            await this.refreshStatus();
+            await this.loadBlockedPeers();
+          } catch (e) {
+            alert('Failed to block peer: ' + (e.message || e));
+          }
+        },
+
+        async reportPeer(peerId) {
+          if (!peerId) return;
+          if (!confirm('Report this peer as malicious? This adds your report to the lobby. After 10 unique reports the peer is globally banned. You will also block them locally.')) {
+            return;
+          }
+          const reason = prompt('Optional reason for the report:', '') || undefined;
+          try {
+            const r = await fetch(`/api/client/peers/${encodeURIComponent(peerId)}/report`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reason }),
+            });
+            if (!r.ok) throw new Error('Report failed');
+            await this.refreshStatus();
+            await this.loadBlockedPeers();
+          } catch (e) {
+            alert('Failed to report peer: ' + (e.message || e));
+          }
+        },
+
+        async unblockPeer(peerId) {
+          if (!peerId) return;
+          try {
+            const r = await fetch(`/api/client/peers/${encodeURIComponent(peerId)}/block`, {
+              method: 'DELETE',
+            });
+            if (!r.ok) throw new Error('Unblock failed');
+            await this.refreshStatus();
+            await this.loadBlockedPeers();
+          } catch (e) {
+            alert('Failed to unblock peer: ' + (e.message || e));
+          }
+        },
+
+        async refreshStatus() {
+          const r = await fetch('/api/client/status');
+          this.status = await r.json();
+          if (this.status.auto_approve_run_model_request !== undefined) {
+            this.settings.autoApproveRunModelRequest = this.status.auto_approve_run_model_request;
+          }
+          if (this.status.auto_approve_inference_connections !== undefined) {
+            this.settings.autoApproveInferenceConnections = this.status.auto_approve_inference_connections;
+          }
+          if (this.status.ollama_tls_insecure !== undefined) {
+            this.settings.ollamaTlsInsecure = this.status.ollama_tls_insecure;
+          }
+          if (this.status.default_num_predict != null) {
+            this.settings.defaultNumPredict = String(this.status.default_num_predict);
+          }
+          if (this.status.default_num_ctx != null) {
+            this.settings.defaultNumCtx = String(this.status.default_num_ctx);
+          }
+          if (this.dashboardTab === 'local') {
+            this.scheduleGpuChartRender();
+          }
+        },
+
+        async switchDashboardTab(tab) {
+          if (this.dashboardTab === 'activity' && tab !== 'activity') {
+            this.stopActivityPolling();
+          }
+          if (this.dashboardTab === 'local' && tab !== 'local') {
+            this.destroyGpuChart();
+          }
+          this.dashboardTab = tab;
+          if (tab === 'local') {
+            await this.refreshStatus();
+            this.scheduleGpuChartRender();
+            if (!this.llm.servers.length && !this.llm.scanning) {
+              await this.scanLlm();
+            }
+            this.updateStatusPollInterval();
+            return;
+          }
+          if (tab === 'activity') {
+            this.startActivityPolling();
+            this.updateStatusPollInterval();
+            return;
+          }
+          if (tab === 'network' && !this.llm.servers.length && !this.llm.scanning) {
+            await this.scanLlm();
+          }
+          if (tab === 'network') {
+            await this.loadBlockedPeers();
+            await this.refreshStatus();
+          }
+          this.updateStatusPollInterval();
+        },
+
+        formatModelSize(bytes) {
+          if (!bytes) return 'Size unknown';
+          const mb = bytes / (1024 * 1024);
+          if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
+          return Math.round(mb) + ' MB';
+        },
+
+        modelStartStatusClass(status) {
+          const map = {
+            already_running: 'bg-emerald-500/20 text-emerald-300',
+            ready: 'bg-emerald-500/20 text-emerald-300',
+            downloading: 'bg-blue-500/20 text-blue-300',
+            warming: 'bg-blue-500/20 text-blue-300',
+            approved: 'bg-blue-500/20 text-blue-300',
+            pending_approval: 'bg-amber-500/20 text-amber-300',
+            submitted: 'bg-slate-500/20 text-slate-300',
+            rejected: 'bg-red-500/20 text-red-300',
+            failed: 'bg-red-500/20 text-red-300',
+            no_capacity: 'bg-red-500/20 text-red-300',
+          };
+          return map[status] || 'bg-slate-500/20 text-slate-300';
+        },
+
+        async searchModelCatalog() {
+          const q = (this.catalogModal.query || '').trim();
+          const minVram = parseInt(this.catalogModal.minVramMb, 10);
+          const maxVram = parseInt(this.catalogModal.maxVramMb, 10);
+          if (!q && !minVram && !maxVram) {
+            this.catalogModal.results = [];
+            return;
+          }
+          this.catalogModal.searching = true;
+          this.catalogModal.error = '';
+          try {
+            const params = new URLSearchParams({ limit: '100' });
+            if (q) params.set('q', q);
+            if (this.catalogModal.catalogSource === 'huggingface') {
+              if (this.catalogModal.serverId) params.set('server_id', this.catalogModal.serverId);
+              const r = await fetch('/api/client/models/hf-catalog?' + params.toString());
+              if (!r.ok) throw new Error(await r.text());
+              const results = await r.json();
+              this.catalogModal.results = (results || []).map(m => ({
+                ...m,
+                selectedQuant: m.default_quant || (m.quants && m.quants[0]) || 'Q4_K_M',
+              }));
+              return;
+            }
+            if (minVram > 0) params.set('min_vram_mb', String(minVram));
+            if (maxVram > 0) params.set('max_vram_mb', String(maxVram));
+            const r = await fetch('/api/client/models/catalog?' + params.toString());
+            if (!r.ok) throw new Error(await r.text());
+            let results = await r.json();
+            if (q && !/\s/.test(q)) {
+              const lookups = [q];
+              if (!q.includes(':')) {
+                lookups.push(q + ':latest', q.replace(/\s+/g, '-'));
+              }
+              for (const name of lookups) {
+                if (results.some(m => m.name === name)) continue;
+                try {
+                  const direct = await fetch('/api/client/models/catalog/' + encodeURIComponent(name));
+                  if (direct.ok) {
+                    const entry = await direct.json();
+                    if (entry?.name) results.push(entry);
+                  }
+                } catch (_) {}
+              }
+              const seen = new Set();
+              results = results.filter(m => {
+                if (!m?.name || seen.has(m.name)) return false;
+                seen.add(m.name);
+                return true;
+              });
+            }
+            this.catalogModal.results = results;
+          } catch (e) {
+            this.catalogModal.error = e.message || 'Catalog search failed';
+            this.catalogModal.results = [];
+          } finally {
+            this.catalogModal.searching = false;
+          }
+        },
+
+        async saveSettings(patch) {
+          this.settings.saving = true;
+          this.settings.error = '';
+          try {
+            const r = await fetch('/api/client/settings', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(patch),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+            this.settings.autoApproveRunModelRequest = data.auto_approve_run_model_request;
+            this.status.auto_approve_run_model_request = data.auto_approve_run_model_request;
+            if ('auto_approve_inference_connections' in data) {
+              this.settings.autoApproveInferenceConnections = data.auto_approve_inference_connections;
+              this.status.auto_approve_inference_connections = data.auto_approve_inference_connections;
+            }
+            if ('ollama_tls_insecure' in data) {
+              this.settings.ollamaTlsInsecure = data.ollama_tls_insecure;
+              this.status.ollama_tls_insecure = data.ollama_tls_insecure;
+            }
+            if ('default_num_predict' in data) {
+              this.settings.defaultNumPredict = data.default_num_predict != null ? String(data.default_num_predict) : '';
+              this.status.default_num_predict = data.default_num_predict;
+            }
+            if ('default_num_ctx' in data) {
+              this.settings.defaultNumCtx = data.default_num_ctx != null ? String(data.default_num_ctx) : '';
+              this.status.default_num_ctx = data.default_num_ctx;
+            }
+          } catch (e) {
+            this.settings.error = e.message || 'Failed to save settings';
+          } finally {
+            this.settings.saving = false;
+          }
+        },
+
+        async saveDefaultNumPredict() {
+          const raw = (this.settings.defaultNumPredict || '').trim();
+          const patch = {
+            default_num_predict: raw ? Number(raw) : null,
+          };
+          if (raw && (!Number.isFinite(patch.default_num_predict) || patch.default_num_predict < 1)) {
+            this.settings.error = 'Enter a positive number or leave empty to use the env var only';
+            return;
+          }
+          await this.saveSettings(patch);
+        },
+
+        async saveDefaultNumCtx() {
+          const raw = (this.settings.defaultNumCtx || '').trim();
+          const patch = {
+            default_num_ctx: raw ? Number(raw) : null,
+          };
+          if (raw && (!Number.isFinite(patch.default_num_ctx) || patch.default_num_ctx < 1)) {
+            this.settings.error = 'Enter a positive number or leave empty to use the env var only';
+            return;
+          }
+          await this.saveSettings(patch);
+        },
+
+        async requestModelStart(model, clusterId) {
+          if (!clusterId) {
+            this.catalogModal.error = 'Select a cluster first';
+            return;
+          }
+          this.catalogModal.requesting = true;
+          this.catalogModal.error = '';
+          try {
+            const r = await fetch('/api/client/models/request', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ model, cluster_id: clusterId }),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+            await this.refreshStatus();
+          } catch (e) {
+            this.catalogModal.error = e.message || 'Request failed';
+          } finally {
+            this.catalogModal.requesting = false;
+          }
+        },
+
+        async confirmCatalogClusterRun(model) {
+          const clusterId = this.catalogModal.clusterId;
+          if (!clusterId) {
+            this.catalogModal.error = 'No cluster selected';
+            return;
+          }
+          const cluster = (this.status.clusters ?? []).find(c => c.cluster_id === clusterId);
+          if (cluster && !cluster.lobby_connected) {
+            this.catalogModal.error = 'Cluster is not connected to the lobby';
+            return;
+          }
+          await this.requestModelStart(model, clusterId);
+        },
+
+        async runModelLocal(entry) {
+          this.catalogModal.localRunning = true;
+          this.catalogModal.error = '';
+          try {
+            const body = { model: typeof entry === 'string' ? entry : (entry?.name || entry?.repo || '') };
+            if (this.catalogModal.serverId) {
+              body.server_id = this.catalogModal.serverId;
+            }
+            if (this.catalogModal.catalogSource === 'huggingface') {
+              body.hf_repo = entry?.repo || entry?.name || body.model;
+              body.quant = entry?.selectedQuant || entry?.default_quant || 'Q4_K_M';
+            }
+            const r = await fetch('/api/client/models/run-local', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+            await this.refreshStatus();
+          } catch (e) {
+            this.catalogModal.error = e.message || 'Local run failed';
+          } finally {
+            this.catalogModal.localRunning = false;
+          }
+        },
+
+        async respondModelStart(offer, accept) {
+          try {
+            const r = await fetch('/api/client/models/respond', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                req_id: offer.req_id,
+                accept,
+                cluster_id: offer.cluster_id,
+              }),
+            });
+            if (!r.ok) throw new Error(await r.text());
+            await this.refreshStatus();
+          } catch (e) {
+            alert('Response failed: ' + (e.message || e));
+          }
+        },
+
+        async respondConnectionOffer(offer, accept) {
+          try {
+            const r = await fetch('/api/client/connection/respond', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                req_id: offer.req_id,
+                accept,
+                cluster_id: offer.cluster_id,
+              }),
+            });
+            if (!r.ok) throw new Error(await r.text());
+            await this.refreshStatus();
+          } catch (e) {
+            alert('Response failed: ' + (e.message || e));
+          }
+        },
+
+        async doRegister() {
+          this.reg.loading = true;
+          this.reg.error = '';
+          try {
+            const inviteOnly = this.lobbyConfig.peer_registration === 'invite_only';
+            const body = inviteOnly
+              ? {
+                  has_existing_service: true,
+                  peer_id: (this.reg.peerId || '').trim(),
+                  service_id: (this.reg.serviceId || '').trim(),
+                  cluster_name: (this.reg.clusterName || 'europe').trim(),
+                }
+              : {
+                  has_existing_service: this.reg.hasService === true,
+                  service_id: this.reg.hasService ? this.reg.serviceId : null,
+                  cluster_name: (this.reg.clusterName || 'europe').trim(),
+                };
+            const r = await fetch('/api/client/register', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            const text = await r.text();
+            if (!r.ok) throw new Error(text || r.statusText);
+            this.reg.result = JSON.parse(text);
+            await this.goToClusters();
+          } catch (e) {
+            this.reg.error = e.message || 'Registration failed';
+          } finally {
+            this.reg.loading = false;
+          }
+        },
+
+        async goToClusters() {
+          await this.refreshSetup();
+          this.setup.step = 2;
+          this.subtitle = 'Set up clusters';
+          await this.refreshClusters();
+        },
+
+        async goToLlm() {
+          await this.refreshSetup();
+          this.setup.step = 3;
+          this.subtitle = 'Attach LLM servers';
+          await this.refreshStatus();
+          await this.scanLlm();
+        },
+
+        async createCluster() {
+          this.clusters.loading = true;
+          this.clusters.error = '';
+          try {
+            const r = await fetch('/api/client/clusters/create', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: this.clusters.createName || null, visibility: 'private' }),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+            this.clusters.lastCreated = data.cluster_id;
+            this.clusters.createName = '';
+            await this.refreshClusters();
+            if (this.setup.complete) await this.refreshStatus();
+          } catch (e) {
+            this.clusters.error = e.message || 'Create failed';
+          } finally {
+            this.clusters.loading = false;
+          }
+        },
+
+        async joinPublicCluster() {
+          this.clusters.loading = true;
+          this.clusters.error = '';
+          try {
+            const r = await fetch('/api/client/clusters/join', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: this.clusters.publicName }),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+            await this.refreshClusters();
+            if (this.setup.complete) await this.refreshStatus();
+          } catch (e) {
+            this.clusters.error = e.message || 'Join failed';
+          } finally {
+            this.clusters.loading = false;
+          }
+        },
+
+        async joinPrivateCluster() {
+          this.clusters.loading = true;
+          this.clusters.error = '';
+          try {
+            const r = await fetch('/api/client/clusters/join', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: this.clusters.privateName.trim(), cluster_id: this.clusters.privateId.trim() }),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+            this.clusters.privateName = '';
+            this.clusters.privateId = '';
+            await this.refreshClusters();
+            if (this.setup.complete) await this.refreshStatus();
+          } catch (e) {
+            this.clusters.error = e.message || 'Join failed';
+          } finally {
+            this.clusters.loading = false;
+          }
+        },
+
+        async disconnectCluster(clusterId) {
+          await fetch('/api/client/clusters/' + encodeURIComponent(clusterId) + '/disconnect', { method: 'POST' });
+          await this.refreshStatus();
+        },
+
+        async connectCluster(clusterId) {
+          await fetch('/api/client/clusters/' + encodeURIComponent(clusterId) + '/connect', { method: 'POST' });
+          await this.refreshStatus();
+        },
+
+        async toggleMaintenance(cluster) {
+          const enabled = !!cluster.accepting_jobs;
+          await fetch('/api/client/clusters/' + encodeURIComponent(cluster.cluster_id) + '/maintenance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled }),
+          });
+          await this.refreshStatus();
+        },
+
+        async removeCluster(clusterId) {
+          await fetch('/api/client/clusters/' + encodeURIComponent(clusterId), { method: 'DELETE' });
+          await this.refreshClusters();
+          if (this.setup.complete) await this.refreshStatus();
+        },
+
+        copyText(text) {
+          navigator.clipboard?.writeText(text);
+        },
+
+        async scanLlm() {
+          this.llm.scanning = true;
+          this.llm.error = '';
+          try {
+            const r = await fetch('/api/client/llm/scan');
+            this.llm.servers = await r.json();
+          } catch (e) {
+            this.llm.error = 'Scan failed';
+          } finally {
+            this.llm.scanning = false;
+          }
+        },
+
+        isScanAttached(srv) {
+          return (this.status.llm_servers ?? []).some(s =>
+            s.url === srv.url && s.kind === srv.kind && s.attached
+          );
+        },
+
+        async attachLlm(srv) {
+          this.llm.error = '';
+          try {
+            const r = await fetch('/api/client/llm/select', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ kind: srv.kind, url: srv.url }),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+            await this.refreshStatus();
+          } catch (e) {
+            this.llm.error = e.message || 'Attach failed';
+          }
+        },
+
+        buildServerPayload() {
+          const payload = {
+            kind: this.llm.customKind,
+            url: (this.llm.customUrl || '').trim(),
+            label: this.llm.customLabel?.trim() || null,
+          };
+          if (this.llm.customKind === 'custom') {
+            const models = (this.llm.customModels || [])
+              .filter(m => (m.id || '').trim())
+              .map(m => ({
+                id: m.id.trim(),
+                name: m.name?.trim() || null,
+                url: m.url?.trim() || null,
+                toolCalling: !!m.toolCalling,
+                vision: !!m.vision,
+              }));
+            if (!models.length) {
+              throw new Error('Custom endpoint requires at least one model id');
+            }
+            payload.api_type = 'chat-completions';
+            payload.models = models;
+            const key = (this.llm.customApiKey || '').trim();
+            if (key) payload.api_key = key;
+          }
+          return payload;
+        },
+
+        async updateServerApiKey() {
+          this.llm.error = '';
+          const id = this.llm.apiKeyEdit.serverId;
+          if (!id) return;
+          try {
+            const body = { api_key: (this.llm.apiKeyEdit.value || '').trim() || null };
+            const r = await fetch('/api/client/llm/servers/' + encodeURIComponent(id) + '/api-key', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+            this.llm.apiKeyEdit = { serverId: '', value: '' };
+            await this.refreshStatus();
+          } catch (e) {
+            this.llm.error = e.message || 'API key update failed';
+          }
+        },
+
+        async updateServerAdminToken() {
+          this.llm.error = '';
+          const id = this.llm.adminTokenEdit.serverId;
+          if (!id) return;
+          try {
+            const body = { admin_token: (this.llm.adminTokenEdit.value || '').trim() || null };
+            const r = await fetch('/api/client/llm/servers/' + encodeURIComponent(id) + '/admin-token', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+            this.llm.adminTokenEdit = { serverId: '', value: '' };
+            await this.refreshStatus();
+          } catch (e) {
+            this.llm.error = e.message || 'Admin token update failed';
+          }
+        },
+
+        async addManualServer(andAttach) {
+          this.llm.error = '';
+          const url = (this.llm.customUrl || '').trim();
+          if (!url) {
+            this.llm.error = 'URL required';
+            return;
+          }
+          let payload;
+          try {
+            payload = this.buildServerPayload();
+          } catch (e) {
+            this.llm.error = e.message;
+            return;
+          }
+          try {
+            const r = await fetch('/api/client/llm/servers', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+            if (andAttach && data.servers?.length) {
+              const added = data.servers.find(s => s.url === url.replace(/\/$/, ''));
+              if (added && !added.attached) await this.attachServer(added.id);
+            }
+            await this.refreshStatus();
+          } catch (e) {
+            this.llm.error = e.message || 'Add failed';
+          }
+        },
+
+        async attachServer(id) {
+          this.llm.error = '';
+          try {
+            const r = await fetch('/api/client/llm/servers/' + encodeURIComponent(id) + '/attach', { method: 'POST' });
+            const data = await r.json();
+            if (!r.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+            await this.refreshStatus();
+          } catch (e) {
+            this.llm.error = e.message || 'Attach failed';
+          }
+        },
+
+        async detachServer(id) {
+          this.llm.error = '';
+          try {
+            const r = await fetch('/api/client/llm/servers/' + encodeURIComponent(id) + '/detach', { method: 'POST' });
+            if (!r.ok) throw new Error(await r.text());
+            await this.refreshStatus();
+          } catch (e) {
+            this.llm.error = e.message || 'Detach failed';
+          }
+        },
+
+        async toggleLocalOnly(srv) {
+          this.llm.error = '';
+          try {
+            const r = await fetch('/api/client/llm/servers/' + encodeURIComponent(srv.id), {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ advertise_to_cluster: !srv.advertise_to_cluster }),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+            await this.refreshStatus();
+          } catch (e) {
+            this.llm.error = e.message || 'Failed to update server visibility';
+          }
+        },
+
+        async removeServer(id) {
+          this.llm.error = '';
+          try {
+            const r = await fetch('/api/client/llm/servers/' + encodeURIComponent(id), { method: 'DELETE' });
+            if (!r.ok) throw new Error(await r.text());
+            await this.refreshStatus();
+          } catch (e) {
+            this.llm.error = e.message || 'Remove failed';
+          }
+        },
+
+        async finishLlmSetup() {
+          if (!(this.status.attached_server_count > 0)) {
+            this.llm.error = 'Attach at least one server';
+            return;
+          }
+          this.setup.complete = true;
+          this.subtitle = 'Dashboard';
+          this.updateStatusPollInterval();
+        },
+
+        async selectLlm(srv) {
+          await this.attachLlm(srv);
+          if (!this.setup.complete && this.status.attached_server_count > 0) {
+            await this.finishLlmSetup();
+          }
+        },
+      };
+    }
+  </script>
+</body>
+</html>

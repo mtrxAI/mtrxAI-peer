@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-setup-bootstrap"
+description = "Allows the setup window to load defaults and start the client."
+commands.allow = ["submit_lobby_setup", "get_setup_defaults"]

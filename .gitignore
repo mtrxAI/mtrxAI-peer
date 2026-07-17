@@ -1,0 +1,41 @@
+# IDEs and other tools
+.idea/
+.vscode/
+.cursor
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local env and release artifacts (may contain secrets)
+.env
+.env.*
+!.env.example
+**/allowed_build.credentials.env
+release/
+
+# Podman kube merged manifest (contains secrets after deploy)
+# Deploy configs moved to mtrxAI-infra — see that repo's .gitignore
+
+# Rust
+/target/
+**/target/
+/release/
+**/*.rs.bk
+
+# Angular
+**.angular/
+node_modules/
+
+# OS-specific
+.DS_Store
+.Trash
+ehthumbs.db
+desktop.ini
+
+# Executables
+*.exe
+*.dll
+*.so
+*.dylib
+

@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="100%" height="100%">
+  <defs>
+    <!-- GRADIENTI DI TRANSIZIONE RADIALE LONGITUDINALE -->
+    <!-- Sfumatura centrale corretta: dal Blu scuro al Turchese -->
+    <linearGradient id="grad-blue-turq" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#003049" />
+      <stop offset="100%" stop-color="#00b4d8" />
+    </linearGradient>
+
+    <!-- Turchese a Verde -->
+    <linearGradient id="grad-turq-green" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#00b4d8" />
+      <stop offset="100%" stop-color="#4ad66d" />
+    </linearGradient>
+
+    <!-- Verde a Giallo -->
+    <linearGradient id="grad-green-yellow" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#4ad66d" />
+      <stop offset="100%" stop-color="#fcbf49" />
+    </linearGradient>
+
+    <!-- Giallo a Arancione -->
+    <linearGradient id="grad-yellow-orange" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#fcbf49" />
+      <stop offset="100%" stop-color="#f77f00" />
+    </linearGradient>
+
+    <!-- Arancione a Rosso -->
+    <linearGradient id="grad-orange-red" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#f77f00" />
+      <stop offset="100%" stop-color="#d62828" />
+    </linearGradient>
+
+    <style>
+      /* Spessore uniforme a 5 per tutti i tracciati del grafo */
+      .line-red { stroke: #d62828; stroke-width: 5; fill: none; }
+      .line-orange { stroke: #f77f00; stroke-width: 5; fill: none; }
+      .line-yellow { stroke: #fcbf49; stroke-width: 5; fill: none; }
+      .line-green { stroke: #4ad66d; stroke-width: 5; fill: none; }
+      .line-turquoise { stroke: #00b4d8; stroke-width: 5; fill: none; }
+      .line-blue { stroke: #003049; stroke-width: 5; fill: none; }
+      
+      /* Collegamenti strutturali con gradiente direzionale lineare */
+      .edge-b-t { stroke: url(#grad-blue-turq); stroke-width: 5; fill: none; }
+      .edge-t-g { stroke: url(#grad-turq-green); stroke-width: 5; fill: none; }
+      .edge-g-y { stroke: url(#grad-green-yellow); stroke-width: 5; fill: none; }
+      .edge-y-o { stroke: url(#grad-yellow-orange); stroke-width: 5; fill: none; }
+      .edge-o-r { stroke: url(#grad-orange-red); stroke-width: 5; fill: none; }
+
+
+      /* Colore dei nodi (cerchi) in vettoriale pieno senza contorni intermedi */
+      .node-red { fill: #d62828; }
+      .node-orange { fill: #f77f00; }
+      .node-yellow { fill: #fcbf49; }
+      .node-green { fill: #4ad66d; }
+      .node-turquoise { fill: #00b4d8; }
+      .node-blue { fill: #003049; }
+    </style>
+
+    <!-- Schema dello spicchio geometrico lineare riproducibile -->
+    <g id="spoke-network-straight">
+      <!-- Raggi di connessione radiale diretta tra livelli con gradiente fluido -->
+      <line x1="0" y1="-55" x2="0" y2="-110" class="edge-b-t" />
+      <line x1="0" y1="-110" x2="0" y2="-170" class="edge-t-g" />
+      <line x1="0" y1="-170" x2="0" y2="-230" class="edge-g-y" />
+      <line x1="0" y1="-230" x2="0" y2="-290" class="edge-y-o" />
+      <line x1="0" y1="-290" x2="0" y2="-350" class="edge-o-r" />
+
+      <!-- Collegamenti angolari e diagonali incrociati della stella a 12 punte -->
+      <line x1="0" y1="-350" x2="175" y2="-303.1" class="line-red" />
+      <line x1="0" y1="-350" x2="145" y2="-251.1" class="edge-o-r" />
+      <line x1="0" y1="-350" x2="-145" y2="-251.1" class="edge-o-r" />
+
+      <line x1="0" y1="-290" x2="145" y2="-251.1" class="line-orange" />
+      <line x1="0" y1="-290" x2="115" y2="-199.1" class="edge-y-o" />
+      <line x1="0" y1="-290" x2="-115" y2="-199.1" class="edge-y-o" />
+
+      <line x1="0" y1="-230" x2="115" y2="-199.1" class="line-yellow" />
+      <line x1="0" y1="-230" x2="85" y2="-147.2" class="edge-g-y" />
+      <line x1="0" y1="-230" x2="-85" y2="-147.2" class="edge-g-y" />
+
+      <line x1="0" y1="-170" x2="85" y2="-147.2" class="line-green" />
+      <line x1="0" y1="-170" x2="55" y2="-95.2" class="edge-t-g" />
+      <line x1="0" y1="-170" x2="-55" y2="-95.2" class="edge-t-g" />
+
+      <line x1="0" y1="-110" x2="55" y2="-95.2" class="line-turquoise" />
+      <line x1="0" y1="-110" x2="27.5" y2="-47.6" class="edge-b-t" />
+      <line x1="0" y1="-110" x2="-27.5" y2="-47.6" class="edge-b-t" />
+
+      <line x1="0" y1="-55" x2="27.5" y2="-47.6" class="line-blue" />
+    </g>
+
+    <!-- Gruppo specchiato di nodi sovrapposti per evitare l'occlusione visiva delle linee -->
+    <g id="spoke-nodes">
+      <circle cx="0" cy="-350" r="10" class="node-red" />
+      <circle cx="0" cy="-290" r="9.5" class="node-orange" />
+      <circle cx="0" cy="-230" r="9.5" class="node-yellow" />
+      <circle cx="0" cy="-170" r="9.5" class="node-green" />
+      <circle cx="0" cy="-110" r="9.5" class="node-turquoise" />
+      <circle cx="0" cy="-55" r="10" class="node-blue" />
+    </g>
+  </defs>
+
+  <!-- Gruppo di trasformazione centrale (Centro geometrico 400, 400) -->
+  <g transform="translate(400, 400)">
+    <!-- 2. Grande Anello Circolare Rosso Perimetrale -->
+
+
+    <!-- 3. RENDERING DELLE LINEE (Sotto) -->
+    <use href="#spoke-network-straight" transform="rotate(0)" />
+    <use href="#spoke-network-straight" transform="rotate(30)" />
+    <use href="#spoke-network-straight" transform="rotate(60)" />
+    <use href="#spoke-network-straight" transform="rotate(90)" />
+    <use href="#spoke-network-straight" transform="rotate(120)" />
+    <use href="#spoke-network-straight" transform="rotate(150)" />
+    <use href="#spoke-network-straight" transform="rotate(180)" />
+    <use href="#spoke-network-straight" transform="rotate(210)" />
+    <use href="#spoke-network-straight" transform="rotate(240)" />
+    <use href="#spoke-network-straight" transform="rotate(270)" />
+    <use href="#spoke-network-straight" transform="rotate(300)" />
+    <use href="#spoke-network-straight" transform="rotate(330)" />
+
+    <!-- 4. RENDERING DEI NODI IN PRIMO PIANO (Sopra) -->
+    <!-- Questo ordine di disegno finale mantiene i cerchi perfettamente sovrapposti ai tracciati -->
+    <use href="#spoke-nodes" transform="rotate(0)" />
+    <use href="#spoke-nodes" transform="rotate(30)" />
+    <use href="#spoke-nodes" transform="rotate(60)" />
+    <use href="#spoke-nodes" transform="rotate(90)" />
+    <use href="#spoke-nodes" transform="rotate(120)" />
+    <use href="#spoke-nodes" transform="rotate(150)" />
+    <use href="#spoke-nodes" transform="rotate(180)" />
+    <use href="#spoke-nodes" transform="rotate(210)" />
+    <use href="#spoke-nodes" transform="rotate(240)" />
+    <use href="#spoke-nodes" transform="rotate(270)" />
+    <use href="#spoke-nodes" transform="rotate(300)" />
+    <use href="#spoke-nodes" transform="rotate(330)" />
+  </g>
+</svg>

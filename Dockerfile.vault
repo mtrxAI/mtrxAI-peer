@@ -1,0 +1,51 @@
+# Hardened mtrxAI peer for secure provider vault / blind relay stacks.
+#
+# Build from mtrxAI-org root:
+#   docker build -f peer/Dockerfile.vault -t mtrxai-client-vault .
+FROM rust:1.88 AS builder
+
+WORKDIR /usr/src/mtrxai
+
+COPY common/mtrxai-attestation ./common/mtrxai-attestation
+COPY peer/Cargo.toml peer/Cargo.lock ./peer/
+COPY peer/peer ./peer/peer
+COPY peer/peer-tests ./peer/peer-tests
+COPY peer/desktop/src-tauri ./peer/desktop/src-tauri
+
+ARG MTRXAI_BUILD_ID
+ARG MTRXAI_ATTESTATION_SECRET
+ARG MTRXAI_VERSION=unknown
+ENV MTRXAI_BUILD_ID=${MTRXAI_BUILD_ID}
+ENV MTRXAI_ATTESTATION_SECRET=${MTRXAI_ATTESTATION_SECRET}
+ENV MTRXAI_ATTESTATION_SKIP=1
+
+WORKDIR /usr/src/mtrxai/peer
+RUN cargo build --release -p peer
+
+FROM nvidia/cuda:12.4.1-base-ubuntu22.04
+
+ARG MTRXAI_VERSION=unknown
+LABEL org.opencontainers.image.title="mtrxai-client-vault" \
+      org.opencontainers.image.version="${MTRXAI_VERSION}"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /bin/bash /usr/bin/bash /bin/sh /usr/bin/sh /bin/dash /usr/bin/dash \
+    && (getent group celluser >/dev/null 2>&1 || groupadd --system --gid 65532 celluser) \
+    && (id -u celluser >/dev/null 2>&1 || useradd --system --uid 65532 --gid 65532 --home-dir /data --shell /usr/sbin/nologin celluser) \
+    && mkdir -p /run/mtrxai /data \
+    && chown -R celluser:celluser /run/mtrxai /data
+
+WORKDIR /usr/local/bin
+
+ENV MTRXAI_PROXY_BIND=0.0.0.0 \
+    MTRXAI_E2EE_ENABLED=1 \
+    MTRXAI_REDACT_LOGS=1
+
+COPY --from=builder /usr/src/mtrxai/peer/target/release/peer .
+RUN chown celluser:celluser /usr/local/bin/peer
+
+USER celluser
+
+ENTRYPOINT ["/usr/local/bin/peer"]

@@ -1,0 +1,17 @@
+{
+  "name": "mtrxai-desktop",
+  "version": "0.1.5",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri",
+    "sync-assets": "node -e \"const fs=require('fs');const dir='dist/assets';fs.mkdirSync(dir,{recursive:true});fs.copyFileSync('../peer/ui/assets/logo.svg',dir+'/logo.svg');\"",
+    "predev": "npm run sync-assets",
+    "prebuild": "npm run sync-assets",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icon": "tauri icon ../peer/ui/assets/logo.svg -o src-tauri/icons"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

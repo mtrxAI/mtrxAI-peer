@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "peer",
+    "peer-tests",
+    "desktop/src-tauri",
+]
+resolver = "2"
