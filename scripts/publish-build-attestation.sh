@@ -30,9 +30,9 @@ export MTRXAI_ATTESTATION_SECRET="${MTRXAI_ATTESTATION_SECRET:-$(openssl rand -h
 echo "Building client with build_id=${MTRXAI_BUILD_ID}"
 
 cd "${ROOT_DIR}"
-cargo build --release -p client
+cargo build --release -p peer
 
-BINARY_PATH="${ROOT_DIR}/target/release/client"
+BINARY_PATH="${ROOT_DIR}/target/release/peer"
 bash "${SCRIPT_DIR}/write-allowed-build-manifest.sh" "${BINARY_PATH}"
 
 if [[ "${MANIFEST_ONLY}" -eq 1 ]]; then

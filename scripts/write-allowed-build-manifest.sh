@@ -39,7 +39,7 @@ if [[ -z "${PLATFORM}" ]]; then
   esac
 fi
 
-VERSION="$(python3 "${ROOT_DIR}/scripts/sync_release_version.py" get-version 2>/dev/null || awk -F'"' '/^version = / {print $2; exit}' "${ROOT_DIR}/client/Cargo.toml")"
+VERSION="$(python3 "${ROOT_DIR}/scripts/sync_release_version.py" get-version 2>/dev/null || awk -F'"' '/^version = / {print $2; exit}' "${ROOT_DIR}/peer/Cargo.toml")"
 GIT_SHA="$(git -C "${ROOT_DIR}" rev-parse HEAD 2>/dev/null || echo unknown)"
 
 if command -v sha256sum >/dev/null 2>&1; then
@@ -51,7 +51,7 @@ else
   exit 1
 fi
 
-PUBLIC_KEY_HEX="$(cd "${ROOT_DIR}" && cargo run -q -p mtrxai-attestation --bin pubkey_from_seed -- "${ATTESTATION_SECRET}")"
+PUBLIC_KEY_HEX="$(cd "${ROOT_DIR}/../common" && cargo run -q -p mtrxai-attestation --bin pubkey_from_seed -- "${ATTESTATION_SECRET}")"
 PUBLIC_KEY_HEX="$(echo "${PUBLIC_KEY_HEX}" | tr -d '[:space:]')"
 
 OUTPUT_PATH="$(dirname "${BINARY_PATH}")/allowed_build.json"

@@ -33,4 +33,4 @@ chmod +x "${ROOT_DIR}/scripts/docker-push-tags.sh"
 "${ROOT_DIR}/scripts/docker-push-tags.sh" "${LOCAL_TAG}" "${REMOTE}" "${VERSION}"
 
 echo "==> Verify embedded build_id matches allowlist for this release:"
-docker run --rm --entrypoint /usr/local/bin/client "${LOCAL_TAG}" 11345 127.0.0.1:8080 127.0.0.1:11434 2>&1 | grep Attestation || true
+docker run --rm --entrypoint /usr/local/bin/peer "${LOCAL_TAG}" 11345 127.0.0.1:8080 127.0.0.1:11434 2>&1 | grep Attestation || true

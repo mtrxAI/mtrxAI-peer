@@ -49,14 +49,14 @@ if (-not $AttestationSecret -or -not $AttestationSecret.Trim()) {
     throw "MTRXAI_ATTESTATION_SECRET is required (set env or pass -AttestationSecret)."
 }
 
-$ClientToml = Join-Path $RootDir "client\Cargo.toml"
-if (-not (Test-Path $ClientToml)) {
-    throw "client/Cargo.toml not found under $RootDir"
+$PeerToml = Join-Path $RootDir "peer\Cargo.toml"
+if (-not (Test-Path $PeerToml)) {
+    throw "peer/Cargo.toml not found under $RootDir"
 }
 
-$VersionLine = Select-String -Path $ClientToml -Pattern '^version\s*=\s*"' | Select-Object -First 1
+$VersionLine = Select-String -Path $PeerToml -Pattern '^version\s*=\s*"' | Select-Object -First 1
 if (-not $VersionLine) {
-    throw "Could not read version from client/Cargo.toml"
+    throw "Could not read version from peer/Cargo.toml"
 }
 $Version = $VersionLine.Line -replace '^.*"([^"]+)".*$', '$1'
 
@@ -73,7 +73,8 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
 
 $Sha256 = (Get-FileHash -LiteralPath $BinaryPath -Algorithm SHA256).Hash.ToLower()
 
-Push-Location $RootDir
+$CommonDir = Join-Path (Split-Path $RootDir -Parent) "common"
+Push-Location $CommonDir
 try {
     $PublicKey = (& cargo run -q -p mtrxai-attestation --bin pubkey_from_seed -- $AttestationSecret.Trim()).Trim()
     if ($LASTEXITCODE -ne 0 -or -not $PublicKey) {
