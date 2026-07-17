@@ -5,9 +5,31 @@ on:
     branches: [main, master]
   pull_request:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: Which tests to run
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - unit
+          - integration
+
+concurrency:
+  group: peer-test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   unit:
+    name: Unit (peer crate)
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.suite == 'all' ||
+      inputs.suite == 'unit'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -31,7 +53,57 @@ jobs:
         with:
           workspaces: peer
 
-      - name: Unit and integration tests
-        run: |
-          cargo test -p peer
-          cargo test -p peer-tests
+      - name: cargo test -p peer
+        run: cargo test -p peer --all-targets
+
+  integration:
+    name: Integration (${{ matrix.test }})
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.suite == 'all' ||
+      inputs.suite == 'integration'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: peer
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - agent_compat
+          - agent_proxy_http
+          - attestation
+          - e2ee_security
+          - llm_backend
+          - llm_custom_endpoint
+          - llm_proxy
+          - llm_proxy_multi
+          - llm_registry
+          - network_controls
+          - network_models
+          - ollama_client
+          - swarm_mode
+          - token_usage
+          - tx_db
+    steps:
+      - name: Checkout peer
+        uses: actions/checkout@v4
+        with:
+          path: peer
+
+      - name: Checkout common
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
+          path: common
+          token: ${{ secrets.MTRXAI_COMMON_READ_TOKEN || github.token }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: peer
+          shared-key: peer-tests
+
+      - name: cargo test -p peer-tests --test ${{ matrix.test }}
+        run: cargo test -p peer-tests --test ${{ matrix.test }} -- --nocapture

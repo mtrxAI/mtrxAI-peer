@@ -30,3 +30,10 @@ Build from the **org root** (`mtrxAI-org/`):
 ```bash
 docker build -f peer/Dockerfile -t mtrxai-client .
 ```
+
+## CI
+
+- **Test** — unit + all `peer-tests` integration suites (matrix).
+- **Release** — attested Docker (linux amd64/arm64) + desktop (Windows/Linux/macOS × amd64/arm64).
+
+Secrets: see [docs/CI_SECRETS.md](docs/CI_SECRETS.md).
