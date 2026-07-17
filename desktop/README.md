@@ -7,7 +7,7 @@ Native desktop packaging for the mtrxAI **client** application. Tauri does not i
 ## How it works
 
 1. On first launch, the setup window defaults to the managed lobby (`api.mtrxai.net`). Saved settings are reused on later launches unless you delete them or set `MTRXAI_LOBBY_HOST`.
-2. Tauri sets desktop environment variables (`MTRXAI_LOBBY_HOST`, `MTRXAI_PROXY_PORT`, `MTRXAI_CONFIG_PATH`, `MTRXAI_ATTESTATION_SKIP`) and spawns `client::run()` in-process.
+2. Tauri sets desktop environment variables (`MTRXAI_LOBBY_HOST`, `MTRXAI_PROXY_PORT`, `MTRXAI_CONFIG_PATH`, `MTRXAI_ATTESTATION_SKIP`) and spawns `peer::run()` in-process.
 3. After the local client HTTP server is ready (`/health`), a webview opens at `http://127.0.0.1:11345` (default port).
 4. All UI ↔ backend communication uses the same HTTP REST API as the container deployment (`/api/client/*`).
 
