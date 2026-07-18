@@ -39,6 +39,16 @@ if [[ -z "${PLATFORM}" ]]; then
   esac
 fi
 
+# Peer proofs use Rust OS/ARCH (linux/x86_64), not Docker GOARCH (linux/amd64).
+case "${PLATFORM}" in
+  linux/amd64) PLATFORM="linux/x86_64" ;;
+  linux/arm64) PLATFORM="linux/aarch64" ;;
+  darwin/arm64|macos/arm64) PLATFORM="macos/aarch64" ;;
+  darwin/amd64|darwin/x86_64|macos/amd64) PLATFORM="macos/x86_64" ;;
+  windows/amd64) PLATFORM="windows/x86_64" ;;
+  windows/arm64) PLATFORM="windows/aarch64" ;;
+esac
+
 VERSION="$(python3 "${ROOT_DIR}/scripts/sync_release_version.py" get-version 2>/dev/null || awk -F'"' '/^version = / {print $2; exit}' "${ROOT_DIR}/peer/Cargo.toml")"
 GIT_SHA="$(git -C "${ROOT_DIR}" rev-parse HEAD 2>/dev/null || echo unknown)"
 
