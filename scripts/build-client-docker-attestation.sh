@@ -12,7 +12,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ORG_DIR="$(cd "${ROOT_DIR}/.." && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE_TAG="${1:-mtrxai-client:attested}"
+IMAGE_TAG="${1:-mtrx-peer:attested}"
 OUT_DIR="${2:-${ROOT_DIR}/release/docker}"
 CREDENTIALS_FILE="${OUT_DIR}/allowed_build.credentials.env"
 

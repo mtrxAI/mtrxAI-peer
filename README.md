@@ -28,7 +28,7 @@ cargo test -p peer -p peer-tests
 Build from the **org root** (`mtrxAI-org/`):
 
 ```bash
-docker build -f peer/Dockerfile -t mtrxai-client .
+docker build -f peer/Dockerfile -t mtrxai/mtrx-peer .
 ```
 
 ## CI

@@ -51,7 +51,7 @@ else
   exit 1
 fi
 
-PUBLIC_KEY_HEX="$(cd "${ROOT_DIR}/../common" && cargo run -q -p mtrxai-attestation --bin pubkey_from_seed -- "${ATTESTATION_SECRET}")"
+PUBLIC_KEY_HEX="$(cd "${ROOT_DIR}/../mtrxAI-common" && cargo run -q -p mtrxai-attestation --bin pubkey_from_seed -- "${ATTESTATION_SECRET}")"
 PUBLIC_KEY_HEX="$(echo "${PUBLIC_KEY_HEX}" | tr -d '[:space:]')"
 
 OUTPUT_PATH="$(dirname "${BINARY_PATH}")/allowed_build.json"

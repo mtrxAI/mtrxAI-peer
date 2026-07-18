@@ -10,12 +10,19 @@ Suggested GitHub repos: `mtrxAI-peer`, `mtrxAI-server`, `mtrxAI-common`, `mtrxAI
 |--------|---------|
 | `MTRXAI_COMMON_READ_TOKEN` | PAT with `contents:read` on **private** `mtrxAI-common`. Skip if common is public (`github.token` is enough). |
 
-### Required for Release (attested Docker + desktop)
+### Required for Release Container (Docker only → `mtrxai/mtrx-peer`)
 
 | Secret | Purpose |
 |--------|---------|
-| `MTRXAI_COMMON_READ_TOKEN` | Same as above (checkout `common` for path deps / attestation pubkey tool). |
-| `DOCKERHUB_USERNAME` | Docker Hub user that can push `cosmicentropy/mtrxai-client`. |
+| `DOCKERHUB_USERNAME` | Docker Hub user that can push `mtrxai/mtrx-peer`. |
+| `DOCKERHUB_TOKEN` | Docker Hub access token (push). Required when `push_docker` is true / on `v*` tags. |
+| `MTRXAI_INFRA_DISPATCH_TOKEN` | PAT with `repo` scope on **mtrxAI-infra** — dispatches allowlist update for Docker manifests. |
+
+### Required for full Release (Docker + desktop)
+
+| Secret | Purpose |
+|--------|---------|
+| `DOCKERHUB_USERNAME` | Docker Hub user that can push `mtrxai/mtrx-peer`. |
 | `DOCKERHUB_TOKEN` | Docker Hub access token (push). Required when `push_docker` is true / on `v*` tags. |
 | `MTRXAI_INFRA_DISPATCH_TOKEN` | PAT with `repo` scope on **mtrxAI-infra** — dispatches `client-release` so the lobby allowlist updates. |
 
@@ -31,12 +38,18 @@ Release artifacts (8): Docker linux amd64/arm64 + desktop linux/windows/macos ×
 
 ## mtrxAI-server
 
+### Required for Test workflow
+
 | Secret | Purpose |
 |--------|---------|
-| `MTRXAI_COMMON_READ_TOKEN` | Read private `mtrxAI-common` for Test CI. |
-| `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` | Only if you add a server image Release workflow that pushes `mtrxai-server`. |
+| _(none if common is public)_ | `github.token` checks out public `mtrxAI-common`. |
 
-Server has Test CI today; no attested peer-style release in this pass.
+### Required for Release Container
+
+| Secret | Purpose |
+|--------|---------|
+| `DOCKERHUB_USERNAME` | Docker Hub user that can push `mtrxai/mtrx-server`. |
+| `DOCKERHUB_TOKEN` | Docker Hub access token (push). |
 
 ---
 
@@ -85,5 +98,5 @@ Infra receives `repository_dispatch` from peer (`MTRXAI_INFRA_DISPATCH_TOKEN` li
 | `MTRXAI_COMMON_READ_TOKEN` | peer (+ server) | fine-grained: read contents of `mtrxAI-common` |
 | `MTRXAI_INFRA_DISPATCH_TOKEN` | peer | fine-grained: read/write Actions on `mtrxAI-infra` (or classic `repo`) |
 | `MTRXAI_APP_READ_TOKEN` | infra | fine-grained: read contents + actions on `mtrxAI-peer` |
-| `DOCKERHUB_*` | peer (and server if needed) | Docker Hub access token |
+| `DOCKERHUB_*` | peer + server | Docker Hub access token for `mtrxai/mtrx-peer` and `mtrxai/mtrx-server` |
 | `MTRXAI_ADMIN_KEY` / `MTRXAI_LOBBY_URL` | infra | lobby credentials (not GitHub) |

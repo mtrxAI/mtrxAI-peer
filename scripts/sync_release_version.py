@@ -19,8 +19,8 @@ PACKAGE_JSON = ROOT / "desktop" / "package.json"
 TAURI_CONF = ROOT / "desktop" / "src-tauri" / "tauri.conf.json"
 
 SIBLING_CARGO = [
-    ROOT.parent / "server" / "server" / "Cargo.toml",
-    ROOT.parent / "common" / "mtrxai-attestation" / "Cargo.toml",
+    ROOT.parent / "mtrxAI-server" / "server" / "Cargo.toml",
+    ROOT.parent / "mtrxAI-common" / "mtrxai-attestation" / "Cargo.toml",
 ]
 
 

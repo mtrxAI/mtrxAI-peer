@@ -33,25 +33,25 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: peer
+        working-directory: mtrxAI-peer
     steps:
       - name: Checkout peer
         uses: actions/checkout@v4
         with:
-          path: peer
+          path: mtrxAI-peer
 
       - name: Checkout common
         uses: actions/checkout@v4
         with:
           repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
-          path: common
+          path: mtrxAI-common
           token: ${{ secrets.MTRXAI_COMMON_READ_TOKEN || github.token }}
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: peer
+          workspaces: mtrxAI-peer
 
       - name: cargo test -p peer
         run: cargo test -p peer --all-targets
@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: peer
+        working-directory: mtrxAI-peer
     strategy:
       fail-fast: false
       matrix:
@@ -89,20 +89,20 @@ jobs:
       - name: Checkout peer
         uses: actions/checkout@v4
         with:
-          path: peer
+          path: mtrxAI-peer
 
       - name: Checkout common
         uses: actions/checkout@v4
         with:
           repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
-          path: common
+          path: mtrxAI-common
           token: ${{ secrets.MTRXAI_COMMON_READ_TOKEN || github.token }}
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: peer
+          workspaces: mtrxAI-peer
           shared-key: peer-tests
 
       - name: cargo test -p peer-tests --test ${{ matrix.test }}

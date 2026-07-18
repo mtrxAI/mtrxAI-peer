@@ -1,16 +1,16 @@
 # Hardened mtrxAI peer for secure provider vault / blind relay stacks.
 #
 # Build from mtrxAI-org root:
-#   docker build -f peer/Dockerfile.vault -t mtrxai-client-vault .
+#   docker build -f mtrxAI-peer/Dockerfile.vault -t mtrxai/mtrx-peer:vault .
 FROM rust:1.88 AS builder
 
 WORKDIR /usr/src/mtrxai
 
-COPY common/mtrxai-attestation ./common/mtrxai-attestation
-COPY peer/Cargo.toml peer/Cargo.lock ./peer/
-COPY peer/peer ./peer/peer
-COPY peer/peer-tests ./peer/peer-tests
-COPY peer/desktop/src-tauri ./peer/desktop/src-tauri
+COPY mtrxAI-common/mtrxai-attestation ./mtrxAI-common/mtrxai-attestation
+COPY mtrxAI-peer/Cargo.toml mtrxAI-peer/Cargo.lock ./mtrxAI-peer/
+COPY mtrxAI-peer/peer ./mtrxAI-peer/peer
+COPY mtrxAI-peer/peer-tests ./mtrxAI-peer/peer-tests
+COPY mtrxAI-peer/desktop/src-tauri ./mtrxAI-peer/desktop/src-tauri
 
 ARG MTRXAI_BUILD_ID
 ARG MTRXAI_ATTESTATION_SECRET
@@ -19,13 +19,13 @@ ENV MTRXAI_BUILD_ID=${MTRXAI_BUILD_ID}
 ENV MTRXAI_ATTESTATION_SECRET=${MTRXAI_ATTESTATION_SECRET}
 ENV MTRXAI_ATTESTATION_SKIP=1
 
-WORKDIR /usr/src/mtrxai/peer
+WORKDIR /usr/src/mtrxai/mtrxAI-peer
 RUN cargo build --release -p peer
 
 FROM nvidia/cuda:12.4.1-base-ubuntu22.04
 
 ARG MTRXAI_VERSION=unknown
-LABEL org.opencontainers.image.title="mtrxai-client-vault" \
+LABEL org.opencontainers.image.title="mtrx-peer-vault" \
       org.opencontainers.image.version="${MTRXAI_VERSION}"
 
 RUN apt-get update \
@@ -43,7 +43,7 @@ ENV MTRXAI_PROXY_BIND=0.0.0.0 \
     MTRXAI_E2EE_ENABLED=1 \
     MTRXAI_REDACT_LOGS=1
 
-COPY --from=builder /usr/src/mtrxai/peer/target/release/peer .
+COPY --from=builder /usr/src/mtrxai/mtrxAI-peer/target/release/peer .
 RUN chown celluser:celluser /usr/local/bin/peer
 
 USER celluser

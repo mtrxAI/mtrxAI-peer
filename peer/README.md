@@ -89,7 +89,7 @@ When a request arrives for a model not in `local_models`:
 ## Docker
 
 ```bash
-docker build -f client/Dockerfile -t mtrxai-client:latest .
+docker build -f client/Dockerfile -t mtrxai/mtrx-peer:latest .
 docker compose up -d peerai-peer1
 ```
 

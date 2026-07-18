@@ -29,7 +29,7 @@ ADMIN_KEY="${MTRXAI_ADMIN_KEY:?set MTRXAI_ADMIN_KEY (must match the lobby server
 
 if [[ ! -f "${MANIFEST}" ]]; then
   echo "Manifest not found: ${MANIFEST}" >&2
-  echo "Build first: scripts/build-client-docker-attestation.sh mtrxai-client:attested" >&2
+  echo "Build first: scripts/build-client-docker-attestation.sh mtrx-peer:attested" >&2
   exit 1
 fi
 

@@ -1,8 +1,8 @@
-# Canonical release version for client, desktop, and server.
-# CI reads this file (or a v* git tag) and syncs all package manifests before building.
+# Canonical release version for peer container and desktop builds.
+# CI reads this file (or a v* git tag) and syncs package manifests before building.
 version = "0.1.5"
 
 [docker]
-registry = "docker.io/cosmicentropy"
-client_image = "mtrxai-client"
-server_image = "mtrxai-server"
+registry = "docker.io/mtrxai"
+client_image = "mtrx-peer"
+server_image = "mtrx-server"

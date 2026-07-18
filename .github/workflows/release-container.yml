@@ -1,4 +1,4 @@
-name: Release
+name: Release Container
 
 on:
   workflow_dispatch:
@@ -7,12 +7,8 @@ on:
         description: Release version (defaults to release.toml, e.g. 0.1.5)
         required: false
         type: string
-      create_github_release:
-        description: Create/update GitHub Release with desktop installers and manifests
-        type: boolean
-        default: false
       push_docker:
-        description: Push attested images to Docker Hub
+        description: Push attested images to Docker Hub (mtrxai/mtrx-peer)
         type: boolean
         default: true
   push:
@@ -20,7 +16,7 @@ on:
       - "v*"
 
 concurrency:
-  group: peer-release-${{ github.ref }}
+  group: peer-release-container-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -62,6 +58,7 @@ jobs:
             echo "client_image=${MTRXAI_DOCKER_CLIENT_IMAGE}"
           } >> "${GITHUB_OUTPUT}"
           echo "Release version: ${MTRXAI_VERSION}"
+          echo "Image: ${MTRXAI_DOCKER_CLIENT_IMAGE}"
 
   docker:
     name: Docker linux/${{ matrix.arch }}
@@ -198,258 +195,16 @@ jobs:
             "${REMOTE}:${MTRXAI_VERSION}-arm64"
           echo "Published multi-arch ${REMOTE}:${MTRXAI_VERSION} and :latest"
 
-  desktop:
-    name: Desktop ${{ matrix.os }} ${{ matrix.arch }}
-    needs: resolve-version
-    runs-on: ${{ matrix.runner }}
-    defaults:
-      run:
-        working-directory: mtrxAI-peer
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: linux
-            arch: amd64
-            runner: ubuntu-latest
-            artifact: attestation-desktop-linux-amd64
-            binary: release/linux/release/mtrxai
-            manifest: release/linux/release/allowed_build.json
-            bundle: release/linux/release/bundle/**
-          - os: linux
-            arch: arm64
-            runner: ubuntu-24.04-arm
-            artifact: attestation-desktop-linux-arm64
-            binary: release/linux/release/mtrxai
-            manifest: release/linux/release/allowed_build.json
-            bundle: release/linux/release/bundle/**
-          - os: windows
-            arch: amd64
-            runner: windows-latest
-            artifact: attestation-desktop-windows-amd64
-            binary: release/windows/release/mtrxai.exe
-            manifest: release/windows/release/allowed_build.json
-            bundle: release/windows/release/bundle/**
-          - os: windows
-            arch: arm64
-            runner: windows-11-arm
-            artifact: attestation-desktop-windows-arm64
-            binary: release/windows/release/mtrxai.exe
-            manifest: release/windows/release/allowed_build.json
-            bundle: release/windows/release/bundle/**
-          - os: macos
-            arch: amd64
-            runner: macos-13
-            artifact: attestation-desktop-macos-amd64
-            binary: release/macos/release/mtrxai
-            manifest: release/macos/release/allowed_build.json
-            bundle: release/macos/release/bundle/**
-          - os: macos
-            arch: arm64
-            runner: macos-14
-            artifact: attestation-desktop-macos-arm64
-            binary: release/macos/release/mtrxai
-            manifest: release/macos/release/allowed_build.json
-            bundle: release/macos/release/bundle/**
-    env:
-      MTRXAI_VERSION: ${{ needs.resolve-version.outputs.version }}
-    steps:
-      - name: Checkout peer
-        uses: actions/checkout@v4
-        with:
-          path: mtrxAI-peer
-
-      - name: Checkout common
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
-          path: mtrxAI-common
-          token: ${{ secrets.MTRXAI_COMMON_READ_TOKEN || github.token }}
-
-      - name: Sync package version (unix)
-        if: matrix.os != 'windows'
-        run: python3 scripts/sync_release_version.py sync "${MTRXAI_VERSION}"
-
-      - name: Sync package version (windows)
-        if: matrix.os == 'windows'
-        shell: pwsh
-        run: python scripts/sync_release_version.py sync $env:MTRXAI_VERSION
-
-      - name: Generate attestation credentials (unix)
-        if: matrix.os != 'windows'
-        run: |
-          echo "MTRXAI_BUILD_ID=$(uuidgen)" >> "$GITHUB_ENV"
-          echo "MTRXAI_ATTESTATION_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-
-      - name: Generate attestation credentials (windows)
-        if: matrix.os == 'windows'
-        shell: pwsh
-        run: |
-          "MTRXAI_BUILD_ID=$([guid]::NewGuid())" >> $env:GITHUB_ENV
-          "MTRXAI_ATTESTATION_SECRET=$((1..32 | ForEach-Object { '{0:x2}' -f (Get-Random -Max 256) }) -join '')" >> $env:GITHUB_ENV
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            mtrxAI-peer/desktop/src-tauri
-            mtrxAI-peer/peer
-          key: desktop-${{ matrix.os }}-${{ matrix.arch }}
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: mtrxAI-peer/desktop/package-lock.json
-
-      - name: Install Tauri Linux dependencies
-        if: matrix.os == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libssl-dev
-
-      - name: Install npm dependencies
-        if: matrix.os != 'linux'
-        working-directory: mtrxAI-peer/desktop
-        run: npm ci
-
-      - name: Build attested desktop (unix)
-        if: matrix.os != 'windows'
-        run: |
-          chmod +x scripts/build-tauri.sh scripts/write-allowed-build-manifest.sh
-          scripts/build-tauri.sh --attestation
-
-      - name: Build attested desktop (windows)
-        if: matrix.os == 'windows'
-        shell: cmd
-        working-directory: mtrxAI-peer
-        run: scripts\build-tauri-windows.cmd -Attestation -SkipNpmInstall
-
-      - name: Verify attestation (unix)
-        if: matrix.os != 'windows'
-        run: |
-          set -euo pipefail
-          MANIFEST="${{ matrix.manifest }}"
-          BINARY="${{ matrix.binary }}"
-          EXPECTED="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["binary_sha256"])' "${MANIFEST}")"
-          if command -v sha256sum >/dev/null; then
-            ACTUAL="$(sha256sum "${BINARY}" | awk '{print $1}')"
-          else
-            ACTUAL="$(shasum -a 256 "${BINARY}" | awk '{print $1}')"
-          fi
-          if [[ "${EXPECTED}" != "${ACTUAL}" ]]; then
-            echo "::error::allowed_build.json hash ${EXPECTED} != binary ${ACTUAL}" >&2
-            exit 1
-          fi
-          BUILD_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["build_id"])' "${MANIFEST}")"
-          echo "Desktop ${{ matrix.os }}/${{ matrix.arch }} attested: build_id=${BUILD_ID} sha=${ACTUAL:0:16}..."
-
-      - name: Verify attestation (windows)
-        if: matrix.os == 'windows'
-        shell: pwsh
-        run: |
-          $manifest = Get-Content "${{ matrix.manifest }}" | ConvertFrom-Json
-          $expected = $manifest.binary_sha256
-          $actual = (Get-FileHash "${{ matrix.binary }}" -Algorithm SHA256).Hash.ToLower()
-          if ($expected -ne $actual) {
-            Write-Error "allowed_build.json hash $expected != binary $actual"
-          }
-          Write-Host "Desktop Windows/${{ matrix.arch }} attested: build_id=$($manifest.build_id) sha=$($actual.Substring(0,16))..."
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          if-no-files-found: error
-          path: |
-            mtrxAI-peer/${{ matrix.binary }}
-            mtrxAI-peer/${{ matrix.manifest }}
-            mtrxAI-peer/release/${{ matrix.os }}/release/allowed_build.credentials.env
-            mtrxAI-peer/${{ matrix.bundle }}
-
-  github-release:
-    name: GitHub Release assets
-    needs:
-      - resolve-version
-      - docker
-      - desktop
-    if: >-
-      always() &&
-      !cancelled() &&
-      (
-        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-        (github.event_name == 'workflow_dispatch' && inputs.create_github_release)
-      ) &&
-      needs.docker.result == 'success' &&
-      needs.desktop.result == 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: attestation-*
-          merge-multiple: false
-          path: dist
-
-      - name: Stage release files
-        run: |
-          mkdir -p release-upload
-          find dist -type f \( \
-            -name 'allowed_build.json' -o \
-            -name '*.AppImage' -o \
-            -name '*.deb' -o \
-            -name '*.dmg' -o \
-            -name '*.msi' -o \
-            -name '*setup.exe' -o \
-            -name '*.tar.gz' -o \
-            -name 'mtrxai' -o \
-            -name 'mtrxai.exe' \
-          \) -exec cp --parents {} release-upload/ \;
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event_name == 'push' && github.ref_name || format('v{0}', needs.resolve-version.outputs.version) }}
-          name: mtrxAI peer v${{ needs.resolve-version.outputs.version }}
-          generate_release_notes: true
-          body: |
-            ## Docker Hub (multi-arch)
-
-            ```bash
-            docker pull ${{ needs.resolve-version.outputs.client_image }}:${{ needs.resolve-version.outputs.version }}
-            # or arch-specific:
-            docker pull ${{ needs.resolve-version.outputs.client_image }}:${{ needs.resolve-version.outputs.version }}-amd64
-            docker pull ${{ needs.resolve-version.outputs.client_image }}:${{ needs.resolve-version.outputs.version }}-arm64
-            ```
-
-            ## Desktop installers
-
-            | Platform | Arch | Asset |
-            |----------|------|-------|
-            | Linux | amd64, arm64 | `.AppImage`, `.deb` |
-            | Windows | amd64, arm64 | `.msi`, NSIS `*-setup.exe` |
-            | macOS | amd64, arm64 | `.dmg` |
-
-            Attested `allowed_build.json` manifests are attached for each platform/arch.
-          files: release-upload/**/*
-          fail_on_unmatched_files: false
-
   dispatch-attestation:
     name: Publish attestation allowlist
     needs:
       - resolve-version
       - docker
-      - desktop
+      - docker-manifest
     if: >-
       always() &&
       !cancelled() &&
       needs.docker.result == 'success' &&
-      needs.desktop.result == 'success' &&
       (
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
         github.event_name == 'workflow_dispatch'
@@ -475,15 +230,14 @@ jobs:
             -f "client_payload[tag]=${TAG}" \
             -f "client_payload[run_id]=${GITHUB_RUN_ID}" \
             -f "client_payload[app_repo]=${{ github.repository }}" \
-            -f "client_payload[scope]=all"
-          echo "Dispatched attestation publish to mtrxAI-infra: tag=${TAG} run_id=${GITHUB_RUN_ID} scope=all"
+            -f "client_payload[scope]=docker"
+          echo "Dispatched attestation publish to mtrxAI-infra: tag=${TAG} run_id=${GITHUB_RUN_ID} scope=docker"
 
   release-summary:
     name: Release summary
     needs:
       - resolve-version
       - docker
-      - desktop
       - docker-manifest
       - dispatch-attestation
     if: always() && !cancelled()
@@ -492,7 +246,7 @@ jobs:
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          pattern: attestation-*
+          pattern: attestation-docker-*
           merge-multiple: true
           path: artifacts
 
@@ -502,13 +256,13 @@ jobs:
           CLIENT_IMAGE: ${{ needs.resolve-version.outputs.client_image }}
         run: |
           {
-            echo "## mtrxAI peer release v${VERSION}"
+            echo "## mtrxAI peer container release v${VERSION}"
             echo ""
             echo "### Docker Hub"
             echo "- \`${CLIENT_IMAGE}:${VERSION}\` (multi-arch amd64+arm64)"
             echo "- \`${CLIENT_IMAGE}:${VERSION}-amd64\` / \`${CLIENT_IMAGE}:${VERSION}-arm64\`"
             echo ""
-            echo "### Attested peer builds"
+            echo "### Attested Docker builds"
             echo "| Target | build_id | platform | binary_sha256 |"
             echo "|--------|----------|----------|---------------|"
             if find artifacts -name 'allowed_build.json' 2>/dev/null | grep -q .; then
@@ -528,7 +282,7 @@ jobs:
             echo ""
             echo "### Attestation allowlist"
             if [[ "${{ needs.dispatch-attestation.result }}" == "success" ]]; then
-              echo "Dispatched to mtrxAI-infra (run_id \`${{ github.run_id }}\`)"
+              echo "Dispatched to mtrxAI-infra (run_id \`${{ github.run_id }}\`, scope=docker)"
             elif [[ "${{ needs.dispatch-attestation.result }}" == "skipped" ]]; then
               echo "_Skipped_"
             else
