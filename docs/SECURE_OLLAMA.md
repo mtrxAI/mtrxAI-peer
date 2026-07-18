@@ -2,7 +2,7 @@
 
 **Status:** Planned — roadmap index: [NEXT_FEATURES.md](NEXT_FEATURES.md) §5 · full plan below.
 
-Optional secure-inference stacks that place an mTLS nginx shield between the mtrxAI client and Ollama. Existing [`dockercompose/production/client/`](../dockercompose/production/client/) compose is unchanged; hardened layouts live under `dockercompose/secure/`.
+Optional secure-inference stacks that place an mTLS nginx shield between the mtrxAI peer and Ollama. Existing [`mtrxAI-infra/deploy/production/peer/`](../../mtrxAI-infra/deploy/production/peer/) compose is unchanged; hardened layouts live under `mtrxAI-infra/deploy/secure/`.
 
 Related docs:
 
@@ -14,17 +14,18 @@ Related docs:
 
 ## Current baseline
 
-Today the production client stack ([`dockercompose/production/client/docker-compose.yml`](../dockercompose/production/client/docker-compose.yml)) runs:
+Today the production peer stack ([`mtrxAI-infra/deploy/production/peer/docker-compose.yml`](../../mtrxAI-infra/deploy/production/peer/docker-compose.yml)) runs:
 
-- **Ollama** on plain HTTP `:11434`, often **published to the host**
-- **mtrxAI client** calling `http://ollama:11434` via `MTRXAI_OLLAMA_HOST`
-- **No mTLS**, no container hardening, no internal-only network
+- **Sealed icell** (`docker.io/mtrxai/mtrx-icell-ollama`) on HTTPS `:8443` (Ollama engine loopback-only inside the cell)
+- **mtrxAI peer** calling `https://ollama:8443` via `MTRXAI_INFERENCE_CELL_URL`
+- Engine port `:11434` is **not** published to the host
 
 ```mermaid
 flowchart LR
   subgraph today [Today]
-    App[Agents / OpenWebUI] -->|HTTP| Proxy[mtrxAI :11345]
-    Proxy -->|plain HTTP| Ollama[Ollama :11434]
+    App[Agents / OpenWebUI] -->|HTTP| Proxy[mtrxAI peer :11345]
+    Proxy -->|HTTPS| Icell[mtrx-icell-ollama :8443]
+    Icell -->|loopback| Engine[Ollama :11434]
   end
 ```
 

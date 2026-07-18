@@ -65,9 +65,18 @@ If common is private, peer/server need `MTRXAI_COMMON_READ_TOKEN` instead.
 
 ## mtrxAI-icell
 
+### Required for Test workflow
+
 | Secret | Purpose |
 |--------|---------|
 | _(none)_ | Build/test only. |
+
+### Required for Release Container (`mtrxai/mtrx-icell-llamacpp`, `mtrxai/mtrx-icell-ollama`)
+
+| Secret | Purpose |
+|--------|---------|
+| `DOCKERHUB_USERNAME` | Docker Hub user that can push `mtrxai/mtrx-icell-llamacpp` and `mtrxai/mtrx-icell-ollama`. |
+| `DOCKERHUB_TOKEN` | Docker Hub access token (push). Required when `push_docker` is true / on `v*` tags. |
 
 ---
 
@@ -98,5 +107,5 @@ Infra receives `repository_dispatch` from peer (`MTRXAI_INFRA_DISPATCH_TOKEN` li
 | `MTRXAI_COMMON_READ_TOKEN` | peer (+ server) | fine-grained: read contents of `mtrxAI-common` |
 | `MTRXAI_INFRA_DISPATCH_TOKEN` | peer | fine-grained: read/write Actions on `mtrxAI-infra` (or classic `repo`) |
 | `MTRXAI_APP_READ_TOKEN` | infra | fine-grained: read contents + actions on `mtrxAI-peer` |
-| `DOCKERHUB_*` | peer + server | Docker Hub access token for `mtrxai/mtrx-peer` and `mtrxai/mtrx-server` |
+| `DOCKERHUB_*` | peer + server + icell | Docker Hub access token for `mtrxai/mtrx-peer`, `mtrxai/mtrx-server`, `mtrxai/mtrx-icell-llamacpp`, `mtrxai/mtrx-icell-ollama` |
 | `MTRXAI_ADMIN_KEY` / `MTRXAI_LOBBY_URL` | infra | lobby credentials (not GitHub) |
