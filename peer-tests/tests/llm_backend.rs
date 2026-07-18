@@ -27,7 +27,7 @@ fn ensure_backend_from_config() {
         llm_url: Some("http://127.0.0.1:11434".to_string()),
         ..Default::default()
     };
-    let backend = ensure_backend(&config, peer::new()).unwrap();
+    let backend = ensure_backend(&config, Client::new()).unwrap();
     assert_eq!(backend.kind_str(), "ollama");
     assert_eq!(backend.base_url(), "http://127.0.0.1:11434");
 }
@@ -35,6 +35,6 @@ fn ensure_backend_from_config() {
 #[test]
 fn ensure_backend_requires_url() {
     let config = ClientConfig::default();
-    let err = ensure_backend(&config, peer::new()).unwrap_err();
+    let err = ensure_backend(&config, Client::new()).unwrap_err();
     assert!(err.to_string().contains("LLM URL not configured"));
 }

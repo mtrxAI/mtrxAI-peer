@@ -13,7 +13,7 @@ fn test_proxy_state_with_llm_url(setup_complete: bool, llm_url: &str) -> ProxySt
     let (proxy_cmd_tx, _) = mpsc::channel(1);
     let (runtime_event_tx, room_notify_tx, swarm_notify_tx) = common::test_notify_channels();
     let shared_state = Arc::new(Mutex::new(test_app_state(proxy_cmd_tx)));
-    let config = Arc::new(RwLock::new(ClientConfig {
+    let client_config = ClientConfig {
         setup_complete,
         llm_servers: vec![LlmServerEntry {
             id: "test-ollama".to_string(),
@@ -28,7 +28,8 @@ fn test_proxy_state_with_llm_url(setup_complete: bool, llm_url: &str) -> ProxySt
             advertise_to_cluster: true,
         }],
         ..Default::default()
-    }));
+    };
+    let config = Arc::new(RwLock::new(client_config.clone()));
     ProxyState::new(
         shared_state,
         config,
@@ -43,6 +44,7 @@ fn test_proxy_state_with_llm_url(setup_complete: bool, llm_url: &str) -> ProxySt
         common::test_peer_stats(),
         common::test_peer_registry(),
         common::test_moderation_channel(),
+        &client_config,
     )
 }
 
@@ -118,7 +120,7 @@ async fn proxy_starts_when_attached_llm_unreachable() {
     });
 
     let url = format!("http://127.0.0.1:{port}/health");
-    let client = reqwest::peer::new();
+    let client = reqwest::Client::new();
     let mut ready = false;
     for _ in 0..20 {
         if let Ok(resp) = client.get(&url).send().await {
@@ -168,7 +170,7 @@ async fn api_chat_routes_network_only_model_without_404() {
     });
 
     let shared_state = Arc::new(Mutex::new(common::test_app_state(proxy_cmd_tx)));
-    let config = Arc::new(RwLock::new(ClientConfig {
+    let client_config = ClientConfig {
         setup_complete: true,
         llm_servers: vec![LlmServerEntry {
             id: "test-ollama".to_string(),
@@ -183,7 +185,8 @@ async fn api_chat_routes_network_only_model_without_404() {
             advertise_to_cluster: true,
         }],
         ..Default::default()
-    }));
+    };
+    let config = Arc::new(RwLock::new(client_config.clone()));
     let (runtime_event_tx, room_notify_tx, swarm_notify_tx) = common::test_notify_channels();
     let state = ProxyState::new(
         shared_state.clone(),
@@ -199,6 +202,7 @@ async fn api_chat_routes_network_only_model_without_404() {
         common::test_peer_stats(),
         common::test_peer_registry(),
         common::test_moderation_channel(),
+        &client_config,
     );
 
     {
@@ -212,7 +216,7 @@ async fn api_chat_routes_network_only_model_without_404() {
         let catalog = state
             .llm_registry
             .inner
-            .rebuild_catalog(peer::ollama_peer::gpu_probe_mode())
+            .rebuild_catalog(peer::ollama_client::gpu_probe_mode())
             .await
             .unwrap();
         let mut app = shared_state.lock().await;

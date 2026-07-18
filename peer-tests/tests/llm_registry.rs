@@ -1,7 +1,7 @@
 use peer::client_config::ClientConfig;
 use peer::llm_registry::{merge_catalog_snapshots, migrate_config, ModelCollision};
 use peer::llm_backend::normalize_backend_label;
-use peer::ollama_peer::ModelCatalogSnapshot;
+use peer::ollama_client::ModelCatalogSnapshot;
 use serde_json::json;
 
 fn entry(id: &str, kind: &str, order: u32) -> peer::client_config::LlmServerEntry {

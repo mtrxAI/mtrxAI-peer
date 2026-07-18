@@ -64,6 +64,7 @@ async fn custom_proxy_state(server: &MockServer, api_key: Option<&str>) -> Proxy
         common::test_peer_stats(),
         common::test_peer_registry(),
         common::test_moderation_channel(),
+        &config,
     );
 
     state
@@ -75,7 +76,7 @@ async fn custom_proxy_state(server: &MockServer, api_key: Option<&str>) -> Proxy
     let catalog = state
         .llm_registry
         .inner
-        .rebuild_catalog(peer::ollama_peer::gpu_probe_mode())
+        .rebuild_catalog(peer::ollama_client::gpu_probe_mode())
         .await
         .unwrap();
     {
@@ -158,7 +159,7 @@ async fn custom_chat_forwards_with_bearer_token() {
 #[tokio::test]
 async fn attach_rejects_custom_without_models() {
     let registry = peer::llm_registry::LlmServerRegistry::new(
-        reqwest::peer::new(),
+        Arc::new(RwLock::new(reqwest::Client::new())),
         common::test_tx_store(),
     );
     let mut cfg = ClientConfig::default();
@@ -189,7 +190,7 @@ async fn removing_server_deletes_stored_api_key() {
     assert!(tx_store.has_server_api_key("srv-x").await.unwrap());
 
     let registry = peer::llm_registry::LlmServerRegistry::new(
-        reqwest::peer::new(),
+        Arc::new(RwLock::new(reqwest::Client::new())),
         tx_store.clone(),
     );
     let mut cfg = ClientConfig::default();

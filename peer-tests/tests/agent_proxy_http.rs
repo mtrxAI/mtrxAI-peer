@@ -15,7 +15,7 @@ fn test_proxy_state_with_backend(server_uri: &str) -> ProxyState {
     let (proxy_cmd_tx, _) = mpsc::channel(1);
     let (runtime_event_tx, room_notify_tx, swarm_notify_tx) = common::test_notify_channels();
     let shared_state = Arc::new(Mutex::new(test_app_state(proxy_cmd_tx)));
-    let config = Arc::new(RwLock::new(ClientConfig {
+    let client_config = ClientConfig {
         setup_complete: true,
         llm_servers: vec![LlmServerEntry {
             id: "test-ollama".to_string(),
@@ -30,7 +30,8 @@ fn test_proxy_state_with_backend(server_uri: &str) -> ProxyState {
             advertise_to_cluster: true,
         }],
         ..Default::default()
-    }));
+    };
+    let config = Arc::new(RwLock::new(client_config.clone()));
     ProxyState::new(
         shared_state.clone(),
         config.clone(),
@@ -45,6 +46,7 @@ fn test_proxy_state_with_backend(server_uri: &str) -> ProxyState {
         common::test_peer_stats(),
         common::test_peer_registry(),
         common::test_moderation_channel(),
+        &client_config,
     )
 }
 
@@ -66,7 +68,7 @@ async fn mount_local_llama(server: &MockServer, state: &ProxyState) {
         let catalog = state
             .llm_registry
             .inner
-            .rebuild_catalog(peer::ollama_peer::gpu_probe_mode())
+            .rebuild_catalog(peer::ollama_client::gpu_probe_mode())
             .await
             .unwrap();
         let mut app = state.shared_state.lock().await;

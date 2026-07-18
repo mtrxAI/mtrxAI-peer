@@ -1,4 +1,4 @@
-use peer::ollama_peer::compute_processor_status;
+use peer::ollama_client::compute_processor_status;
 
 #[test]
 fn cpu_only_when_vram_missing() {

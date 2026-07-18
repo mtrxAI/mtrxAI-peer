@@ -79,6 +79,7 @@ async fn proxy_with_two_backends() -> (ProxyState, MockServer, MockServer) {
         common::test_peer_stats(),
         common::test_peer_registry(),
         common::test_moderation_channel(),
+        &config,
     );
 
     state
@@ -90,7 +91,7 @@ async fn proxy_with_two_backends() -> (ProxyState, MockServer, MockServer) {
     let catalog = state
         .llm_registry
         .inner
-        .rebuild_catalog(peer::ollama_peer::gpu_probe_mode())
+        .rebuild_catalog(peer::ollama_client::gpu_probe_mode())
         .await
         .unwrap();
     {
