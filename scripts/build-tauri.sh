@@ -35,12 +35,22 @@ esac
 RELEASE_DIR="${ROOT_DIR}/release/${OS}"
 export CARGO_TARGET_DIR="${RELEASE_DIR}"
 
+PROFILE_DIR="${RELEASE_DIR}/release"
+
 if [[ "${ATTESTATION}" -eq 1 ]]; then
     export MTRXAI_ATTESTATION_SKIP=0
     export MTRXAI_BUILD_ID="${MTRXAI_BUILD_ID:-$(uuidgen 2>/dev/null || python -c 'import uuid; print(uuid.uuid4())')}"
     export MTRXAI_ATTESTATION_SECRET="${MTRXAI_ATTESTATION_SECRET:-$(openssl rand -hex 32)}"
     echo "MTRXAI_BUILD_ID=${MTRXAI_BUILD_ID}"
-    echo "Generated MTRXAI_ATTESTATION_SECRET (store securely - required to rebuild this attested binary)"
+    echo "Generated MTRXAI_ATTESTATION_SECRET (stored in allowed_build.credentials.env - required to rebuild this attested binary)"
+    mkdir -p "${PROFILE_DIR}"
+    # Persist before the long compile so a later manifest failure does not lose the secret.
+    cat > "${PROFILE_DIR}/allowed_build.credentials.env" <<EOF
+MTRXAI_BUILD_ID=${MTRXAI_BUILD_ID}
+MTRXAI_ATTESTATION_SECRET=${MTRXAI_ATTESTATION_SECRET}
+MTRXAI_ATTESTATION_SKIP=0
+EOF
+    echo "Saved rebuild credentials: ${PROFILE_DIR}/allowed_build.credentials.env"
 else
     export MTRXAI_ATTESTATION_SKIP="${MTRXAI_ATTESTATION_SKIP:-1}"
 fi
@@ -57,7 +67,6 @@ cd "${TAURI_DIR}"
 npm install
 npm run build
 
-PROFILE_DIR="${RELEASE_DIR}/release"
 echo ""
 echo "==> Build complete"
 echo "Release root: ${RELEASE_DIR}"

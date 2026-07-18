@@ -75,8 +75,27 @@ function New-AttestationSecretHex {
     return -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
 }
 
+function Save-AttestationCredentials {
+    param([string]$ReleaseDir)
+
+    if (-not (Test-Path $ReleaseDir)) {
+        New-Item -ItemType Directory -Path $ReleaseDir -Force | Out-Null
+    }
+
+    $CredentialsPath = Join-Path $ReleaseDir "allowed_build.credentials.env"
+    @(
+        "MTRXAI_BUILD_ID=$($env:MTRXAI_BUILD_ID)"
+        "MTRXAI_ATTESTATION_SECRET=$($env:MTRXAI_ATTESTATION_SECRET)"
+        "MTRXAI_ATTESTATION_SKIP=0"
+    ) | Set-Content -Path $CredentialsPath -Encoding ascii
+    Write-Host "Saved rebuild credentials: $CredentialsPath"
+}
+
 function Ensure-AttestationBuildEnv {
-    param([switch]$Enabled)
+    param(
+        [switch]$Enabled,
+        [string]$ReleaseDir
+    )
 
     if (-not $Enabled) {
         if (-not $env:MTRXAI_ATTESTATION_SKIP) {
@@ -95,8 +114,11 @@ function Ensure-AttestationBuildEnv {
 
     if (-not $env:MTRXAI_ATTESTATION_SECRET -or -not $env:MTRXAI_ATTESTATION_SECRET.Trim()) {
         $env:MTRXAI_ATTESTATION_SECRET = New-AttestationSecretHex
-        Write-Host "Generated MTRXAI_ATTESTATION_SECRET (store securely - required to rebuild this attested binary)"
+        Write-Host "Generated MTRXAI_ATTESTATION_SECRET (stored in allowed_build.credentials.env - required to rebuild this attested binary)"
     }
+
+    # Persist before the long compile so a later manifest failure does not lose the secret.
+    Save-AttestationCredentials -ReleaseDir $ReleaseDir
 }
 
 function Ensure-ReleaseExeUnlocked {
@@ -138,7 +160,8 @@ if (-not (Test-Path $TauriDir)) {
 $env:CARGO_TARGET_DIR = $OsReleaseDir
 Write-Host "CARGO_TARGET_DIR=$($env:CARGO_TARGET_DIR)"
 
-Ensure-AttestationBuildEnv -Enabled:$Attestation
+$ReleaseDir = Join-Path $OsReleaseDir "release"
+Ensure-AttestationBuildEnv -Enabled:$Attestation -ReleaseDir $ReleaseDir
 
 Push-Location $TauriDir
 try {
@@ -152,7 +175,7 @@ try {
 
     Write-Step "Building Tauri release bundles"
     Stop-RunningDesktopApp
-    Ensure-ReleaseExeUnlocked -ExePath (Join-Path $OsReleaseDir "release\mtrxai.exe")
+    Ensure-ReleaseExeUnlocked -ExePath (Join-Path $ReleaseDir "mtrxai.exe")
     npm run build
     if ($LASTEXITCODE -ne 0) {
         throw "npm run build failed with exit code $LASTEXITCODE"
@@ -162,7 +185,6 @@ finally {
     Pop-Location
 }
 
-$ReleaseDir = Join-Path $OsReleaseDir "release"
 $BundleDir = Join-Path $ReleaseDir "bundle"
 $ExePath = Join-Path $ReleaseDir "mtrxai.exe"
 
@@ -182,12 +204,5 @@ if ($Attestation -and (Test-Path $ExePath)) {
     Write-Step "Writing allowed_build manifest for DB insert"
     $ManifestScript = Join-Path $PSScriptRoot "write-allowed-build-manifest.ps1"
     & $ManifestScript -BinaryPath $ExePath -RootDir $RootDir
-
-    $CredentialsPath = Join-Path $ReleaseDir "allowed_build.credentials.env"
-    @(
-        "MTRXAI_BUILD_ID=$($env:MTRXAI_BUILD_ID)"
-        "MTRXAI_ATTESTATION_SECRET=$($env:MTRXAI_ATTESTATION_SECRET)"
-        "MTRXAI_ATTESTATION_SKIP=0"
-    ) | Set-Content -Path $CredentialsPath -Encoding UTF8
-    Write-Host "Saved rebuild credentials: $CredentialsPath"
+    Save-AttestationCredentials -ReleaseDir $ReleaseDir
 }

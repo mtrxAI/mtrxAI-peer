@@ -32,7 +32,7 @@ Suggested GitHub repos: `mtrxAI-peer`, `mtrxAI-server`, `mtrxAI-common`, `mtrxAI
 |--------|---------|
 | _(none for Apple signing yet)_ | macOS builds are unsigned unless you add Apple Developer certs later. |
 
-Release artifacts (8): Docker linux amd64/arm64 + desktop linux/windows/macos × amd64/arm64.
+Release artifacts (7): Docker linux amd64/arm64 + desktop linux/windows (amd64+arm64) + macos arm64.
 
 ---
 

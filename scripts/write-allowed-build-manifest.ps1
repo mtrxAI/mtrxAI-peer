@@ -4,7 +4,7 @@
 #   .\scripts\write-allowed-build-manifest.ps1 -BinaryPath release\windows\release\mtrxai.exe
 #
 # Requires MTRXAI_ATTESTATION_SECRET (and ideally MTRXAI_BUILD_ID) from the build env.
-# Optional: MTRXAI_BUILD_PLATFORM (default: windows/x86_64 on Windows)
+# Optional: MTRXAI_BUILD_PLATFORM (default: windows/x86_64 or windows/aarch64 from PROCESSOR_ARCHITECTURE)
 
 #Requires -Version 5.1
 
@@ -39,7 +39,12 @@ if (-not $AttestationSecret) {
     $AttestationSecret = $env:MTRXAI_ATTESTATION_SECRET
 }
 if (-not $Platform) {
-    $Platform = if ($env:MTRXAI_BUILD_PLATFORM) { $env:MTRXAI_BUILD_PLATFORM } else { "windows/x86_64" }
+    if ($env:MTRXAI_BUILD_PLATFORM) {
+        $Platform = $env:MTRXAI_BUILD_PLATFORM
+    } else {
+        $Arch = $env:PROCESSOR_ARCHITECTURE
+        $Platform = if ($Arch -eq "ARM64") { "windows/aarch64" } else { "windows/x86_64" }
+    }
 }
 
 if (-not $BuildId -or -not $BuildId.Trim()) {
@@ -73,7 +78,18 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
 
 $Sha256 = (Get-FileHash -LiteralPath $BinaryPath -Algorithm SHA256).Hash.ToLower()
 
-$CommonDir = Join-Path (Split-Path $RootDir -Parent) "common"
+$ParentDir = Split-Path $RootDir -Parent
+$CommonDir = $null
+foreach ($Candidate in @("mtrxAI-common", "common")) {
+    $Try = Join-Path $ParentDir $Candidate
+    if (Test-Path (Join-Path $Try "mtrxai-attestation")) {
+        $CommonDir = $Try
+        break
+    }
+}
+if (-not $CommonDir) {
+    throw "mtrxAI-common (or common) not found next to $RootDir - expected ../mtrxAI-common/mtrxai-attestation"
+}
 Push-Location $CommonDir
 try {
     $PublicKey = (& cargo run -q -p mtrxai-attestation --bin pubkey_from_seed -- $AttestationSecret.Trim()).Trim()

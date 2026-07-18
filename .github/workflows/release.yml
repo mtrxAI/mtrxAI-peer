@@ -212,6 +212,7 @@ jobs:
           - os: linux
             arch: amd64
             runner: ubuntu-latest
+            platform: linux/x86_64
             artifact: attestation-desktop-linux-amd64
             binary: release/linux/release/mtrxai
             manifest: release/linux/release/allowed_build.json
@@ -219,6 +220,7 @@ jobs:
           - os: linux
             arch: arm64
             runner: ubuntu-24.04-arm
+            platform: linux/aarch64
             artifact: attestation-desktop-linux-arm64
             binary: release/linux/release/mtrxai
             manifest: release/linux/release/allowed_build.json
@@ -226,6 +228,7 @@ jobs:
           - os: windows
             arch: amd64
             runner: windows-latest
+            platform: windows/x86_64
             artifact: attestation-desktop-windows-amd64
             binary: release/windows/release/mtrxai.exe
             manifest: release/windows/release/allowed_build.json
@@ -233,26 +236,22 @@ jobs:
           - os: windows
             arch: arm64
             runner: windows-11-arm
+            platform: windows/aarch64
             artifact: attestation-desktop-windows-arm64
             binary: release/windows/release/mtrxai.exe
             manifest: release/windows/release/allowed_build.json
             bundle: release/windows/release/bundle/**
           - os: macos
-            arch: amd64
-            runner: macos-13
-            artifact: attestation-desktop-macos-amd64
-            binary: release/macos/release/mtrxai
-            manifest: release/macos/release/allowed_build.json
-            bundle: release/macos/release/bundle/**
-          - os: macos
             arch: arm64
             runner: macos-14
+            platform: macos/aarch64
             artifact: attestation-desktop-macos-arm64
             binary: release/macos/release/mtrxai
             manifest: release/macos/release/allowed_build.json
             bundle: release/macos/release/bundle/**
     env:
       MTRXAI_VERSION: ${{ needs.resolve-version.outputs.version }}
+      MTRXAI_BUILD_PLATFORM: ${{ matrix.platform }}
     steps:
       - name: Checkout peer
         uses: actions/checkout@v4
@@ -433,7 +432,7 @@ jobs:
             |----------|------|-------|
             | Linux | amd64, arm64 | `.AppImage`, `.deb` |
             | Windows | amd64, arm64 | `.msi`, NSIS `*-setup.exe` |
-            | macOS | amd64, arm64 | `.dmg` |
+            | macOS | arm64 | `.dmg` |
 
             Attested `allowed_build.json` manifests are attached for each platform/arch.
           files: release-upload/**/*

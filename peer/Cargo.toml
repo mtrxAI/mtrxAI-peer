@@ -35,7 +35,8 @@ native_db = { version = "0.8", features = ["tokio"] }
 native_model = "0.4"
 once_cell = "1"
 chrono = { version = "0.4", features = ["serde"] }
-libp2p = { version = "0.54", features = ["tcp", "quic", "dns", "identify", "kad", "gossipsub", "rendezvous", "autonat", "relay", "request-response", "macros", "noise", "yamux", "tokio"] }
+# No `quic`: libp2p 0.54's quic → rcgen 0.11 → ring 0.16 breaks Windows ARM64 builds.
+libp2p = { version = "0.54", features = ["tcp", "dns", "identify", "kad", "gossipsub", "rendezvous", "autonat", "relay", "request-response", "macros", "noise", "yamux", "tokio"] }
 hex = "0.4.3"
 async-trait = "0.1.89"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
