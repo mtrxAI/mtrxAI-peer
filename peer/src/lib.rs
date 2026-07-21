@@ -1,42 +1,42 @@
-pub mod gpu;
-pub mod gpu_history;
-pub mod gpu_thermal_guard;
-pub mod lobby_monitor;
-pub mod llm_monitor;
-pub mod lobby_url;
-pub mod network_actions;
-pub mod network_scheduler;
-pub mod peer_stats;
 pub mod agent_compat;
+pub mod api;
 pub mod attestation;
 pub mod client_config;
-pub mod crypto;
-pub mod inference_ipc;
-pub mod inference_sidecar;
-pub mod llm_registry;
-pub mod llm_backend;
-pub mod llm_discovery;
-pub mod llm_proxy;
-pub mod hf_catalog;
-pub mod inference_cell_run;
-pub mod model_run;
-pub mod network_catalog;
-pub mod ollama_client;
-pub mod peer_discovery;
 pub mod cluster_dc_e2ee;
 pub mod cluster_manager;
 pub mod connect_allowance;
+pub mod crypto;
+pub mod gpu;
+pub mod gpu_history;
+pub mod gpu_thermal_guard;
+pub mod hf_catalog;
+pub mod inference_cell_run;
+pub mod inference_ipc;
+pub mod inference_sidecar;
+pub mod llm_backend;
+pub mod llm_discovery;
+pub mod llm_monitor;
+pub mod llm_proxy;
+pub mod llm_registry;
+pub mod lobby_monitor;
+pub mod lobby_url;
+pub mod model_run;
+pub mod network_actions;
+pub mod network_catalog;
+pub mod network_scheduler;
+pub mod ollama_client;
 pub mod p2p_manager;
 pub mod p2p_protocol;
 pub mod p2p_proxy;
+pub mod peer_discovery;
 pub mod peer_ranking;
+pub mod peer_stats;
 pub mod proxy_e2ee;
 pub mod security;
 pub mod shared;
 pub mod swarm_manager;
 pub mod token_usage;
 pub mod tx_db;
-pub mod api;
 pub mod webrtc_manager;
 
 use client_config::{
@@ -44,21 +44,21 @@ use client_config::{
     invalidate_local_peer_identity, load_client_config, save_client_config,
     sync_peer_device_key_with_lobby,
 };
+use cluster_manager::ClusterManager;
+use gpu_history::spawn_gpu_monitor;
+use llm_monitor::spawn_llm_monitor;
 use llm_registry::init_registry_from_config;
+use lobby_monitor::spawn_lobby_monitor;
+use network_scheduler::spawn_network_scheduler;
 use ollama_client::{gpu_probe_mode, model_poll_interval_secs};
 use peer_discovery::discover_peer_location;
-use gpu_history::spawn_gpu_monitor;
-use network_scheduler::spawn_network_scheduler;
-use lobby_monitor::spawn_lobby_monitor;
-use llm_monitor::spawn_llm_monitor;
-use tx_db::{spawn_transaction_sync, TxStore};
-use cluster_manager::ClusterManager;
 use shared::{AppState, NetworkMode, RuntimeEvent, SharedState};
-use swarm_manager::SwarmManager;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use swarm_manager::SwarmManager;
 use tokio::sync::{mpsc, Mutex, RwLock};
+use tx_db::{spawn_transaction_sync, TxStore};
 
 async fn spawn_swarm_manager(
     slot: &Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
@@ -95,12 +95,18 @@ async fn spawn_swarm_manager(
     };
     let Some(notify_rx) = swarm_notify_rx_holder.lock().await.take() else {
         proxy_cmd_rx_holder.lock().await.replace(proxy_rx);
-        model_start_cmd_rx_holder.lock().await.replace(model_start_rx);
+        model_start_cmd_rx_holder
+            .lock()
+            .await
+            .replace(model_start_rx);
         return;
     };
     let Some(moderation_rx) = peer_moderation_rx_holder.lock().await.take() else {
         proxy_cmd_rx_holder.lock().await.replace(proxy_rx);
-        model_start_cmd_rx_holder.lock().await.replace(model_start_rx);
+        model_start_cmd_rx_holder
+            .lock()
+            .await
+            .replace(model_start_rx);
         swarm_notify_rx_holder.lock().await.replace(notify_rx);
         return;
     };
@@ -162,18 +168,27 @@ async fn spawn_cluster_manager(
     };
     let Some(connection_rx) = connection_cmd_rx_holder.lock().await.take() else {
         proxy_cmd_rx_holder.lock().await.replace(proxy_rx);
-        model_start_cmd_rx_holder.lock().await.replace(model_start_rx);
+        model_start_cmd_rx_holder
+            .lock()
+            .await
+            .replace(model_start_rx);
         return;
     };
     let Some(notify_rx) = cluster_notify_rx_holder.lock().await.take() else {
         proxy_cmd_rx_holder.lock().await.replace(proxy_rx);
-        model_start_cmd_rx_holder.lock().await.replace(model_start_rx);
+        model_start_cmd_rx_holder
+            .lock()
+            .await
+            .replace(model_start_rx);
         connection_cmd_rx_holder.lock().await.replace(connection_rx);
         return;
     };
     let Some(moderation_rx) = peer_moderation_rx_holder.lock().await.take() else {
         proxy_cmd_rx_holder.lock().await.replace(proxy_rx);
-        model_start_cmd_rx_holder.lock().await.replace(model_start_rx);
+        model_start_cmd_rx_holder
+            .lock()
+            .await
+            .replace(model_start_rx);
         connection_cmd_rx_holder.lock().await.replace(connection_rx);
         cluster_notify_rx_holder.lock().await.replace(notify_rx);
         return;
@@ -273,12 +288,8 @@ pub async fn run() -> anyhow::Result<()> {
     println!(" Transaction DB: {}", tx_db::tx_db_path());
 
     if client_config.setup_complete && client_config.peer_id.is_some() {
-        match sync_peer_device_key_with_lobby(
-            &http_client,
-            &mut client_config,
-            tx_store.as_ref(),
-        )
-        .await
+        match sync_peer_device_key_with_lobby(&http_client, &mut client_config, tx_store.as_ref())
+            .await
         {
             Ok(()) => {}
             Err(e) => {
@@ -314,8 +325,9 @@ pub async fn run() -> anyhow::Result<()> {
     let connection_cmd_rx_holder: Arc<Mutex<Option<mpsc::Receiver<shared::ConnectionAction>>>> =
         Arc::new(Mutex::new(Some(connection_rx)));
     let (swarm_model_start_tx, swarm_model_start_rx) = mpsc::channel(100);
-    let swarm_model_start_cmd_rx_holder: Arc<Mutex<Option<mpsc::Receiver<shared::ModelStartAction>>>> =
-        Arc::new(Mutex::new(Some(swarm_model_start_rx)));
+    let swarm_model_start_cmd_rx_holder: Arc<
+        Mutex<Option<mpsc::Receiver<shared::ModelStartAction>>>,
+    > = Arc::new(Mutex::new(Some(swarm_model_start_rx)));
     let (runtime_event_tx, mut runtime_event_rx) = mpsc::channel(8);
     let (cluster_notify_tx, cluster_notify_rx) = mpsc::channel(8);
     let cluster_notify_rx_holder: Arc<Mutex<Option<mpsc::Receiver<()>>>> =
@@ -324,11 +336,13 @@ pub async fn run() -> anyhow::Result<()> {
     let swarm_notify_rx_holder: Arc<Mutex<Option<mpsc::Receiver<()>>>> =
         Arc::new(Mutex::new(Some(swarm_notify_rx)));
     let (peer_moderation_tx, peer_moderation_rx) = mpsc::channel(32);
-    let peer_moderation_rx_holder: Arc<Mutex<Option<mpsc::Receiver<shared::PeerModerationAction>>>> =
-        Arc::new(Mutex::new(Some(peer_moderation_rx)));
+    let peer_moderation_rx_holder: Arc<
+        Mutex<Option<mpsc::Receiver<shared::PeerModerationAction>>>,
+    > = Arc::new(Mutex::new(Some(peer_moderation_rx)));
     let (swarm_moderation_tx, swarm_moderation_rx) = mpsc::channel(32);
-    let swarm_moderation_rx_holder: Arc<Mutex<Option<mpsc::Receiver<shared::PeerModerationAction>>>> =
-        Arc::new(Mutex::new(Some(swarm_moderation_rx)));
+    let swarm_moderation_rx_holder: Arc<
+        Mutex<Option<mpsc::Receiver<shared::PeerModerationAction>>>,
+    > = Arc::new(Mutex::new(Some(swarm_moderation_rx)));
 
     let cluster_network_models: Arc<Mutex<HashMap<String, Vec<serde_json::Value>>>> =
         Arc::new(Mutex::new(HashMap::new()));
@@ -489,12 +503,8 @@ pub async fn run() -> anyhow::Result<()> {
                     proxy_bg.setup_complete.store(true, Ordering::Relaxed);
                     let cfg = config_bg.read().await.clone();
                     if has_attached_llm_servers(&cfg) {
-                        init_registry_from_config(
-                            &proxy_bg.llm_registry.inner,
-                            &cfg,
-                            &shared_bg,
-                        )
-                        .await;
+                        init_registry_from_config(&proxy_bg.llm_registry.inner, &cfg, &shared_bg)
+                            .await;
                         spawn_gpu_monitor(
                             shared_bg.clone(),
                             proxy_bg.llm_registry.clone(),

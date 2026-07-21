@@ -288,6 +288,11 @@ pub fn swarm_peer_registry_key(peer_id: &str, swarm_id: &str) -> String {
 
 #[derive(Debug, Clone)]
 pub enum PeerModerationAction {
-    CloseConnections { peer_id: String },
-    Report { peer_id: String, reason: Option<String> },
+    CloseConnections {
+        peer_id: String,
+    },
+    Report {
+        peer_id: String,
+        reason: Option<String>,
+    },
 }

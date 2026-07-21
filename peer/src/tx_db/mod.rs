@@ -26,10 +26,7 @@ pub fn tx_db_path() -> String {
     let config = Path::new(&config_path);
     if let Some(parent) = config.parent() {
         if !parent.as_os_str().is_empty() {
-            return parent
-                .join(TX_DB_PATH)
-                .to_string_lossy()
-                .into_owned();
+            return parent.join(TX_DB_PATH).to_string_lossy().into_owned();
         }
     }
 
@@ -41,8 +38,12 @@ static MODELS: Lazy<Models> = Lazy::new(|| {
     models.define::<models::v1::PeerRecord>().unwrap();
     models.define::<models::v1::PeerTransaction>().unwrap();
     models.define::<models::v1::BlockedPeerRecord>().unwrap();
-    models.define::<models::v1::LlmServerSecretRecord>().unwrap();
-    models.define::<models::v1::LlmServerAdminTokenRecord>().unwrap();
+    models
+        .define::<models::v1::LlmServerSecretRecord>()
+        .unwrap();
+    models
+        .define::<models::v1::LlmServerAdminTokenRecord>()
+        .unwrap();
     models.define::<models::v1::Libp2pKeyRecord>().unwrap();
     models.define::<models::v1::RoomKeyRecord>().unwrap();
     models.define::<models::v1::PeerAuthKeyRecord>().unwrap();
@@ -124,9 +125,7 @@ impl TxStore {
 
     pub fn open_in_memory() -> anyhow::Result<Self> {
         let db = Builder::new().create_in_memory(&MODELS)?;
-        Ok(Self {
-            db: Arc::new(db),
-        })
+        Ok(Self { db: Arc::new(db) })
     }
 
     pub fn open(path: &str) -> anyhow::Result<Self> {
@@ -140,9 +139,7 @@ impl TxStore {
         } else {
             Builder::new().create(&MODELS, path)?
         };
-        Ok(Self {
-            db: Arc::new(db),
-        })
+        Ok(Self { db: Arc::new(db) })
     }
 
     pub async fn record_local_report(
@@ -291,24 +288,26 @@ impl TxStore {
             .unwrap_or(0);
 
         let now = unix_now();
-        let mut tx = self.load_transaction(&view.req_id).unwrap_or(PeerTransaction {
-            req_id: view.req_id.clone(),
-            consumer_peer_id: consumer.clone(),
-            provider_peer_id: provider.clone(),
-            model: view.model.clone().unwrap_or_default(),
-            counterparty_peer_id: counterparty.clone(),
-            status: view.status.clone(),
-            reported_at_unix: settled_at_unix.max(now),
-            role: role.to_string(),
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            total_tokens: view.total_tokens.unwrap_or(0).max(0) as u32,
-            consumer_credit_delta: consumer_delta,
-            provider_credit_delta: provider_delta,
-            local_credit_delta,
-            same_service: view.same_service.unwrap_or(false),
-            settled_at_unix,
-        });
+        let mut tx = self
+            .load_transaction(&view.req_id)
+            .unwrap_or(PeerTransaction {
+                req_id: view.req_id.clone(),
+                consumer_peer_id: consumer.clone(),
+                provider_peer_id: provider.clone(),
+                model: view.model.clone().unwrap_or_default(),
+                counterparty_peer_id: counterparty.clone(),
+                status: view.status.clone(),
+                reported_at_unix: settled_at_unix.max(now),
+                role: role.to_string(),
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_tokens: view.total_tokens.unwrap_or(0).max(0) as u32,
+                consumer_credit_delta: consumer_delta,
+                provider_credit_delta: provider_delta,
+                local_credit_delta,
+                same_service: view.same_service.unwrap_or(false),
+                settled_at_unix,
+            });
 
         if view.status == "mismatched" && tx.status != "mismatched" {
             if let Some(handle) = peer_stats {
@@ -354,9 +353,8 @@ impl TxStore {
     fn token_totals_by_counterparty_sync(&self) -> anyhow::Result<HashMap<String, u64>> {
         let mut totals: HashMap<String, u64> = HashMap::new();
         for tx in self.all_transactions()? {
-            *totals
-                .entry(tx.counterparty_peer_id.clone())
-                .or_insert(0) += u64::from(tx.total_tokens);
+            *totals.entry(tx.counterparty_peer_id.clone()).or_insert(0) +=
+                u64::from(tx.total_tokens);
         }
         Ok(totals)
     }
@@ -410,8 +408,7 @@ impl TxStore {
     pub async fn is_peer_blocked(&self, peer_id: &str) -> anyhow::Result<bool> {
         let store = self.clone();
         let peer_id = peer_id.to_string();
-        tokio::task::spawn_blocking(move || Ok(store.is_peer_blocked_sync(&peer_id)))
-            .await?
+        tokio::task::spawn_blocking(move || Ok(store.is_peer_blocked_sync(&peer_id))).await?
     }
 
     pub async fn list_blocked_peers(&self) -> anyhow::Result<Vec<BlockedPeerView>> {
@@ -534,9 +531,7 @@ impl TxStore {
                 continue;
             }
             let model_bucket = by_model.entry(tx.model.clone()).or_default();
-            let peer_bucket = by_peer
-                .entry(tx.counterparty_peer_id.clone())
-                .or_default();
+            let peer_bucket = by_peer.entry(tx.counterparty_peer_id.clone()).or_default();
             if delta < 0 {
                 let spent = delta.unsigned_abs() as i64;
                 model_bucket.consumed += spent;
@@ -555,9 +550,7 @@ impl TxStore {
                 earned: bucket.earned,
             })
             .collect();
-        by_model.sort_by(|a, b| {
-            (b.consumed + b.earned).cmp(&(a.consumed + a.earned))
-        });
+        by_model.sort_by(|a, b| (b.consumed + b.earned).cmp(&(a.consumed + a.earned)));
 
         let mut by_peer: Vec<PeerCreditStats> = by_peer
             .into_iter()
@@ -567,9 +560,7 @@ impl TxStore {
                 earned: bucket.earned,
             })
             .collect();
-        by_peer.sort_by(|a, b| {
-            (b.consumed + b.earned).cmp(&(a.consumed + a.earned))
-        });
+        by_peer.sort_by(|a, b| (b.consumed + b.earned).cmp(&(a.consumed + a.earned)));
 
         Ok(TransactionStats { by_model, by_peer })
     }
@@ -612,9 +603,7 @@ impl TxStore {
 
     fn load_peer(&self, peer_id: &str) -> Option<PeerRecord> {
         let r = self.db.r_transaction().ok()?;
-        r.get()
-            .primary::<PeerRecord>(peer_id.to_string())
-            .ok()?
+        r.get().primary::<PeerRecord>(peer_id.to_string()).ok()?
     }
 
     fn all_transactions(&self) -> anyhow::Result<Vec<PeerTransaction>> {
@@ -638,10 +627,16 @@ impl Default for CreditBucket {
     }
 }
 
-pub fn spawn_transaction_sync(proxy_state: Arc<crate::llm_proxy::ProxyState>, tx_store: Arc<TxStore>) {
+pub fn spawn_transaction_sync(
+    proxy_state: Arc<crate::llm_proxy::ProxyState>,
+    tx_store: Arc<TxStore>,
+) {
     tokio::spawn(async move {
         loop {
-            if proxy_state.setup_complete.load(std::sync::atomic::Ordering::SeqCst) {
+            if proxy_state
+                .setup_complete
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
                 sync_transactions_once(&proxy_state, &tx_store).await;
             }
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
@@ -649,10 +644,7 @@ pub fn spawn_transaction_sync(proxy_state: Arc<crate::llm_proxy::ProxyState>, tx
     });
 }
 
-async fn sync_transactions_once(
-    proxy_state: &crate::llm_proxy::ProxyState,
-    tx_store: &TxStore,
-) {
+async fn sync_transactions_once(proxy_state: &crate::llm_proxy::ProxyState, tx_store: &TxStore) {
     let local_peer_id = proxy_state.shared_state.lock().await.peer_id.clone();
     if local_peer_id.is_empty() {
         return;

@@ -98,10 +98,12 @@ pub fn rank_swarm_peers_for_model_with_tee(
             .and_then(|s| s.get("loaded"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let rtt = latency_ms.get(&peer.peer_id).copied().unwrap_or(u64::MAX / 2);
+        let rtt = latency_ms
+            .get(&peer.peer_id)
+            .copied()
+            .unwrap_or(u64::MAX / 2);
         let load_score = peer_load_score(model_entry, &peer.gpu_host);
-        let tee_rank = peer.tee_capable
-            || peer.trust_level.as_deref() == Some("tee_gpu");
+        let tee_rank = peer.tee_capable || peer.trust_level.as_deref() == Some("tee_gpu");
         candidates.push((peer.peer_id.clone(), tee_rank, loaded, rtt, load_score));
     }
 
@@ -115,7 +117,11 @@ pub fn rank_swarm_peers_for_model_with_tee(
     candidates.into_iter().map(|(id, _, _, _, _)| id).collect()
 }
 
-pub fn peer_can_host(gpu_host: &Option<GpuHostStatus>, vram_needed_mb: u64, accepting_jobs: bool) -> bool {
+pub fn peer_can_host(
+    gpu_host: &Option<GpuHostStatus>,
+    vram_needed_mb: u64,
+    accepting_jobs: bool,
+) -> bool {
     if !accepting_jobs {
         return false;
     }
@@ -131,7 +137,11 @@ pub fn select_provider_peer(
     requester_peer_id: &str,
 ) -> Option<String> {
     if let Some(requester) = peers.iter().find(|p| p.peer_id == requester_peer_id) {
-        if peer_can_host(&requester.gpu_host, vram_needed_mb, requester.accepting_jobs) {
+        if peer_can_host(
+            &requester.gpu_host,
+            vram_needed_mb,
+            requester.accepting_jobs,
+        ) {
             return Some(requester_peer_id.to_string());
         }
     }
@@ -144,7 +154,11 @@ pub fn select_provider_peer(
         if !peer_can_host(&peer.gpu_host, vram_needed_mb, peer.accepting_jobs) {
             continue;
         }
-        let model_entry = peer.models.first().cloned().unwrap_or(serde_json::json!({}));
+        let model_entry = peer
+            .models
+            .first()
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
         let load_score = peer_load_score(&model_entry, &peer.gpu_host);
         candidates.push((peer.peer_id.clone(), load_score));
     }
@@ -249,7 +263,8 @@ mod tests {
             peer("far", "AS200 Other", 45.01, 9.01, "llama3"),
             peer("near-asn", "AS100 ISP", 46.0, 10.0, "llama3"),
         ];
-        let ranked = rank_peers_for_model(Some(&requester), "llama3", &peers, "me", &HashSet::new());
+        let ranked =
+            rank_peers_for_model(Some(&requester), "llama3", &peers, "me", &HashSet::new());
         assert_eq!(ranked[0], "near-asn");
     }
 }

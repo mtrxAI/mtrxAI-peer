@@ -7,7 +7,12 @@ pub const LEGACY_PEER_CONFIG_PATH: &str = "peer_config.json";
 pub const DEFAULT_PUBLIC_CLUSTER: &str = "europe";
 
 pub const PUBLIC_CONTINENTS: &[&str] = &[
-    "africa", "americas", "antarctica", "asia", "europe", "oceania",
+    "africa",
+    "americas",
+    "antarctica",
+    "asia",
+    "europe",
+    "oceania",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -153,13 +158,25 @@ pub struct CustomModelEntry {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-    #[serde(default, rename = "toolCalling", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "toolCalling",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub tool_calling: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vision: Option<bool>,
-    #[serde(default, rename = "maxInputTokens", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "maxInputTokens",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub max_input_tokens: Option<u64>,
-    #[serde(default, rename = "maxOutputTokens", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "maxOutputTokens",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub max_output_tokens: Option<u64>,
 }
 
@@ -196,10 +213,7 @@ pub struct LlmServerEntry {
 }
 
 pub fn is_custom_server_kind(kind: &str) -> bool {
-    matches!(
-        kind.to_lowercase().as_str(),
-        "custom" | "customendpoint"
-    )
+    matches!(kind.to_lowercase().as_str(), "custom" | "customendpoint")
 }
 
 pub fn is_inference_cell_kind(kind: &str) -> bool {
@@ -468,8 +482,7 @@ pub fn load_client_config() -> ClientConfig {
         serde_json::from_str::<ClientConfig>(&content).unwrap_or_default()
     } else if let Ok(content) = fs::read_to_string(LEGACY_PEER_CONFIG_PATH) {
         if let Ok(legacy) = serde_json::from_str::<LegacyPeerConfig>(&content) {
-            let setup_complete =
-                !legacy.service_id.is_empty() && !legacy.peer_id.is_empty();
+            let setup_complete = !legacy.service_id.is_empty() && !legacy.peer_id.is_empty();
             ClientConfig {
                 peer_id: Some(legacy.peer_id),
                 service_id: Some(legacy.service_id),
@@ -647,7 +660,8 @@ pub async fn register_with_lobby(
     tx_store: &crate::tx_db::TxStore,
 ) -> anyhow::Result<RegisterPeerResponse> {
     let url = crate::lobby_url::lobby_api_url(lobby_host, "/api/peers/register");
-    let attestation = crate::attestation::maybe_build_attestation_proof(http_client, lobby_host).await?;
+    let attestation =
+        crate::attestation::maybe_build_attestation_proof(http_client, lobby_host).await?;
     let mut body = serde_json::json!({
         "peer_id": peer_id.and_then(|id| Uuid::parse_str(id).ok()),
         "service_name": service_name.filter(|s| !s.trim().is_empty()),
@@ -741,10 +755,7 @@ pub async fn list_clusters_with_lobby(
 ) -> anyhow::Result<Vec<ClusterListView>> {
     let url = crate::lobby_url::lobby_api_url(lobby_host, "/api/clusters");
     let mut req = http_client.get(&url);
-    if let (Some(peer_id), Some(store)) = (
-        peer_id.filter(|id| !id.trim().is_empty()),
-        tx_store,
-    ) {
+    if let (Some(peer_id), Some(store)) = (peer_id.filter(|id| !id.trim().is_empty()), tx_store) {
         let (timestamp, signature) = crate::security::build_ws_auth_query(store, peer_id)?;
         req = req.query(&[
             ("peer_id", peer_id),
@@ -871,7 +882,11 @@ pub fn default_public_cluster_name(config: &ClientConfig) -> String {
     std::env::var("MTRXAI_CLUSTER_NAME")
         .ok()
         .filter(|s| !s.trim().is_empty())
-        .or_else(|| std::env::var("MTRXAI_ROOM_NAME").ok().filter(|s| !s.trim().is_empty()))
+        .or_else(|| {
+            std::env::var("MTRXAI_ROOM_NAME")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+        })
         .or_else(|| config.cluster.clone())
         .unwrap_or_else(|| DEFAULT_PUBLIC_CLUSTER.to_string())
 }
@@ -923,9 +938,7 @@ fn docker_setup_deferred_message() {
     let port = env_non_empty("MTRXAI_PROXY_PORT")
         .and_then(|p| p.parse::<u16>().ok())
         .unwrap_or(11345);
-    println!(
-        "⏳ Peer registration pending — open http://127.0.0.1:{port}/ to complete setup"
-    );
+    println!("⏳ Peer registration pending — open http://127.0.0.1:{port}/ to complete setup");
     println!(
         "   Or set MTRXAI_SERVICE_NAME + MTRXAI_SERVICE_PASSWORD for auto-registration \
          (MTRXAI_PEER_ID for pre-provisioned peers)"
@@ -1067,13 +1080,8 @@ pub async fn bootstrap_docker_peer(
 
     match try_bootstrap_registration(http_client, config, lobby_cfg.as_ref(), tx_store).await {
         Ok(Some(reg)) => {
-            complete_docker_bootstrap_after_registration(
-                http_client,
-                config,
-                &reg,
-                &cluster_name,
-            )
-            .await?;
+            complete_docker_bootstrap_after_registration(http_client, config, &reg, &cluster_name)
+                .await?;
         }
         Ok(None) => docker_setup_deferred_message(),
         Err(e) => {
@@ -1184,7 +1192,10 @@ pub fn remove_cluster(config: &mut ClientConfig, cluster_id: &str) {
     }
 }
 
-pub fn find_cluster<'a>(config: &'a ClientConfig, cluster_id: &str) -> Option<&'a ClusterMembership> {
+pub fn find_cluster<'a>(
+    config: &'a ClientConfig,
+    cluster_id: &str,
+) -> Option<&'a ClusterMembership> {
     config.clusters.iter().find(|c| c.cluster_id == cluster_id)
 }
 
@@ -1192,7 +1203,10 @@ pub fn find_cluster_mut<'a>(
     config: &'a mut ClientConfig,
     cluster_id: &str,
 ) -> Option<&'a mut ClusterMembership> {
-    config.clusters.iter_mut().find(|c| c.cluster_id == cluster_id)
+    config
+        .clusters
+        .iter_mut()
+        .find(|c| c.cluster_id == cluster_id)
 }
 
 pub fn membership_from_response(
@@ -1203,7 +1217,10 @@ pub fn membership_from_response(
     ClusterMembership {
         cluster_id: resp.cluster_id.to_string(),
         name: resp.name.clone(),
-        visibility: resp.visibility.clone().or_else(|| Some("public".to_string())),
+        visibility: resp
+            .visibility
+            .clone()
+            .or_else(|| Some("public".to_string())),
         accepting_jobs: Some(true),
         connected: Some(true),
         room_secret: Some(stored.clone()),
@@ -1246,11 +1263,7 @@ pub fn find_swarm<'a>(config: &'a ClientConfig, swarm_id: &str) -> Option<&'a Sw
 }
 
 pub fn find_swarm_by_token(config: &ClientConfig, token: &str) -> Option<SwarmMembership> {
-    config
-        .swarms
-        .iter()
-        .find(|s| s.p2p_token == token)
-        .cloned()
+    config.swarms.iter().find(|s| s.p2p_token == token).cloned()
 }
 
 /// When the user creates or joins a swarm, enable libp2p transport if it was cluster-only.

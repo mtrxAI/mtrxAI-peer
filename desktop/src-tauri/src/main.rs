@@ -70,7 +70,10 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(BootstrapState::new())
-        .invoke_handler(tauri::generate_handler![get_setup_defaults, submit_lobby_setup])
+        .invoke_handler(tauri::generate_handler![
+            get_setup_defaults,
+            submit_lobby_setup
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
 
@@ -97,10 +100,7 @@ fn main() {
                     }
                 }
                 Err(e) => {
-                    show_error_and_exit(
-                        &handle,
-                        &format!("Failed to load desktop settings:\n{e}"),
-                    );
+                    show_error_and_exit(&handle, &format!("Failed to load desktop settings:\n{e}"));
                 }
             }
 

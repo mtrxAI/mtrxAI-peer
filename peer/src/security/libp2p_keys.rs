@@ -1,7 +1,7 @@
 use libp2p::identity::Keypair;
-use libp2p::PeerId;
 use libp2p::multiaddr::Protocol;
 use libp2p::Multiaddr;
+use libp2p::PeerId;
 use sha2::{Digest, Sha256};
 
 use crate::tx_db::TxStore;
@@ -42,9 +42,7 @@ pub fn resolve_libp2p_peer_id(listen_addrs: &[String], mtrxai_peer_id: &str) -> 
             }
         }
     }
-    legacy_derive_keypair(mtrxai_peer_id)
-        .public()
-        .to_peer_id()
+    legacy_derive_keypair(mtrxai_peer_id).public().to_peer_id()
 }
 
 pub fn peer_id_from_multiaddr(addr: &Multiaddr) -> Option<PeerId> {
@@ -66,9 +64,6 @@ mod tests {
         let store = TxStore::open_in_memory().unwrap();
         let kp1 = load_or_create_libp2p_keypair(&store, "peer-a").unwrap();
         let kp2 = load_or_create_libp2p_keypair(&store, "peer-a").unwrap();
-        assert_eq!(
-            kp1.public().to_peer_id(),
-            kp2.public().to_peer_id()
-        );
+        assert_eq!(kp1.public().to_peer_id(), kp2.public().to_peer_id());
     }
 }

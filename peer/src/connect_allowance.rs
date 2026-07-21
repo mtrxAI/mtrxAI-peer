@@ -52,8 +52,7 @@ impl ConnectionAllowanceStore {
 
     pub fn purge_expired(&mut self) {
         let now = Instant::now();
-        self.allowances
-            .retain(|_, a| a.expires_at > now);
+        self.allowances.retain(|_, a| a.expires_at > now);
     }
 }
 

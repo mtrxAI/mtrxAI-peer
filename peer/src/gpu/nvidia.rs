@@ -1,7 +1,7 @@
 use crate::gpu::aggregate::aggregate_gpu_devices;
 use crate::gpu::command::{command_no_window, run_command};
 use crate::gpu::util::{
-    infer_producer, nvidia_architecture_label, parse_optional_u8, parse_optional_u32,
+    infer_producer, nvidia_architecture_label, parse_optional_u32, parse_optional_u8,
 };
 use crate::shared::{GpuDeviceInfo, GpuHostStatus};
 use std::path::Path;

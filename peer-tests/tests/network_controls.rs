@@ -1,5 +1,5 @@
-use peer::network_scheduler::{is_inside_window, parse_hhmm, resolve_cluster_schedule};
 use peer::client_config::{ClientConfig, ClusterMembership};
+use peer::network_scheduler::{is_inside_window, parse_hhmm, resolve_cluster_schedule};
 
 #[test]
 fn schedule_resolves_membership_override() {
@@ -28,8 +28,16 @@ fn schedule_resolves_membership_override() {
     assert!(schedule.enabled);
     assert_eq!(schedule.start_mins, parse_hhmm("10:00").unwrap());
     assert_eq!(schedule.end_mins, parse_hhmm("16:00").unwrap());
-    assert!(is_inside_window(schedule.start_mins, schedule.end_mins, 11 * 60));
-    assert!(!is_inside_window(schedule.start_mins, schedule.end_mins, 9 * 60));
+    assert!(is_inside_window(
+        schedule.start_mins,
+        schedule.end_mins,
+        11 * 60
+    ));
+    assert!(!is_inside_window(
+        schedule.start_mins,
+        schedule.end_mins,
+        9 * 60
+    ));
 }
 
 #[test]

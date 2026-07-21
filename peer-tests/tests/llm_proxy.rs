@@ -1,9 +1,9 @@
 mod common;
 
-use peer::client_config::{ClientConfig, LlmServerEntry};
-use peer::llm_proxy::{proxy_router, run_proxy_server, ProxyState};
 use common::test_app_state;
 use http_body_util::BodyExt;
+use peer::client_config::{ClientConfig, LlmServerEntry};
+use peer::llm_proxy::{proxy_router, run_proxy_server, ProxyState};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -137,7 +137,10 @@ async fn proxy_starts_when_attached_llm_unreachable() {
     }
 
     server.abort();
-    assert!(ready, "expected /health to respond while attached LLM is unreachable");
+    assert!(
+        ready,
+        "expected /health to respond while attached LLM is unreachable"
+    );
 }
 
 #[tokio::test]
@@ -148,14 +151,11 @@ async fn api_chat_routes_network_only_model_without_404() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/tags"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(common::ollama_tags_response()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(common::ollama_tags_response()))
         .mount(&server)
         .await;
 
-    let (proxy_cmd_tx, mut proxy_cmd_rx) =
-        mpsc::channel::<peer::shared::ProxyRequestCommand>(1);
+    let (proxy_cmd_tx, mut proxy_cmd_rx) = mpsc::channel::<peer::shared::ProxyRequestCommand>(1);
     tokio::spawn(async move {
         while let Some(cmd) = proxy_cmd_rx.recv().await {
             if cmd.model == "remote-model" {

@@ -115,12 +115,8 @@ pub async fn send_encrypted_proxy_request(
     catalog_pk: Option<&str>,
 ) -> Result<EncryptedConsumerState> {
     let cfg = proxy_state.client_config.read().await;
-    let provider_pk = resolve_provider_static_public(
-        &proxy_state.tx_store,
-        &cfg,
-        room_id,
-        catalog_pk,
-    )?;
+    let provider_pk =
+        resolve_provider_static_public(&proxy_state.tx_store, &cfg, room_id, catalog_pk)?;
     let (stream_msg, ephemeral_secret) = encrypt_proxy_request(
         &proxy_state.tx_store,
         &cfg,
@@ -138,10 +134,7 @@ pub async fn send_encrypted_proxy_request(
         let wire_len = serde_json::to_string(&stream_msg)?.len();
         crate::security::log_redact::proxy_request_wire(req_id, wire_len, 1, MAX_DC_WIRE_BYTES);
         send_stream_message(dc, &stream_msg).await?;
-        let StreamMessage::EncryptedProxyRequest {
-            path, room_id, ..
-        } = &stream_msg
-        else {
+        let StreamMessage::EncryptedProxyRequest { path, room_id, .. } = &stream_msg else {
             anyhow::bail!("encrypt_proxy_request returned unexpected message");
         };
         return Ok(EncryptedConsumerState {
@@ -355,7 +348,11 @@ pub async fn handle_encrypted_request_end(
         }
     };
 
-    crate::security::log_redact::proxy_request_received(&req_id, &incoming.path, Some(body_str.len()));
+    crate::security::log_redact::proxy_request_received(
+        &req_id,
+        &incoming.path,
+        Some(body_str.len()),
+    );
 
     dispatch_cluster_encrypted_proxy_body(
         req_id,
@@ -645,7 +642,10 @@ async fn dispatch_cluster_encrypted_proxy_body(
         ensure_ollama_ctx_options_with_default, ensure_ollama_predict_options_with_default,
         ensure_stream_usage,
     };
-    use crate::client_config::{cluster_accepts_jobs, effective_default_num_ctx, effective_default_num_predict, find_cluster};
+    use crate::client_config::{
+        cluster_accepts_jobs, effective_default_num_ctx, effective_default_num_predict,
+        find_cluster,
+    };
     use crate::security::log_redact;
 
     if let Some(err) = verify_encrypted_request_auth_async(&auth, &proxy_state, &room_id).await {
@@ -679,8 +679,13 @@ async fn dispatch_cluster_encrypted_proxy_body(
                     let _ = send_stream_message(&dc, &resp).await;
                 }
                 Err(e) => {
-                    send_encrypted_stream_error(&dc, &req_id, aad_version, format!("Vault IPC error: {e}"))
-                        .await;
+                    send_encrypted_stream_error(
+                        &dc,
+                        &req_id,
+                        aad_version,
+                        format!("Vault IPC error: {e}"),
+                    )
+                    .await;
                 }
             }
         });
@@ -776,10 +781,7 @@ async fn dispatch_cluster_encrypted_proxy_body(
             return;
         }
 
-        match proxy_state
-            .forward_chat_stream(&path, &body, &model)
-            .await
-        {
+        match proxy_state.forward_chat_stream(&path, &body, &model).await {
             Ok(mut stream) => {
                 let mut response_buffer = String::new();
                 let mut pending_send = String::new();
@@ -790,13 +792,12 @@ async fn dispatch_cluster_encrypted_proxy_body(
                 while let Some(Ok(chunk_bytes)) = stream.next().await {
                     if let Ok(chunk_str) = String::from_utf8(chunk_bytes.to_vec()) {
                         bytes_received += chunk_str.len() as u64;
-                        let partial_tokens =
-                            crate::token_usage::accumulate_and_parse_usage(
-                                &mut response_buffer,
-                                &chunk_str,
-                            )
-                            .map(|u| u.total_tokens)
-                            .unwrap_or(0);
+                        let partial_tokens = crate::token_usage::accumulate_and_parse_usage(
+                            &mut response_buffer,
+                            &chunk_str,
+                        )
+                        .map(|u| u.total_tokens)
+                        .unwrap_or(0);
                         // accumulate_and_parse_usage already appended chunk_str to response_buffer
                         pending_send.push_str(&chunk_str);
                         proxy_state.stats_stream_progress(
@@ -847,11 +848,7 @@ async fn dispatch_cluster_encrypted_proxy_body(
                 let usage = crate::token_usage::parse_usage_from_buffer(&response_buffer)
                     .unwrap_or_default();
 
-                proxy_state.stats_request_complete(
-                    &req_id,
-                    usage.total_tokens,
-                    bytes_received,
-                );
+                proxy_state.stats_request_complete(&req_id, usage.total_tokens, bytes_received);
 
                 crate::token_usage::publish_token_usage_report(
                     proxy_state.tx_store.clone(),
@@ -869,13 +866,8 @@ async fn dispatch_cluster_encrypted_proxy_body(
                 );
             }
             Err(e) => {
-                send_encrypted_stream_error(
-                    &dc,
-                    &req_id,
-                    aad_version,
-                    format!("Proxy Error: {e}"),
-                )
-                .await;
+                send_encrypted_stream_error(&dc, &req_id, aad_version, format!("Proxy Error: {e}"))
+                    .await;
                 proxy_state.stats_request_error(&req_id);
             }
         }

@@ -64,13 +64,7 @@ impl PeerStatsTracker {
         Self::default()
     }
 
-    pub fn on_request_start(
-        &mut self,
-        req_id: &str,
-        peer_id: &str,
-        model: &str,
-        bytes_sent: u64,
-    ) {
+    pub fn on_request_start(&mut self, req_id: &str, peer_id: &str, model: &str, bytes_sent: u64) {
         let now = unix_now();
         let accum = self.peers.entry(peer_id.to_string()).or_default();
         accum.active_requests = accum.active_requests.saturating_add(1);
@@ -197,19 +191,7 @@ impl PeerStatsTracker {
                 a.last_bytes_sent,
                 a.recent_outcomes.clone(),
             ),
-            None => (
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                None,
-                0,
-                0,
-                VecDeque::new(),
-            ),
+            None => (0, 0, 0, 0, 0, 0, 0, None, 0, 0, VecDeque::new()),
         };
 
         let mut tokens_in_window = 0u64;
@@ -228,7 +210,12 @@ impl PeerStatsTracker {
         }
 
         let requests_in_window = accum
-            .map(|a| a.request_timestamps.iter().filter(|ts| **ts >= cutoff).count() as f64)
+            .map(|a| {
+                a.request_timestamps
+                    .iter()
+                    .filter(|ts| **ts >= cutoff)
+                    .count() as f64
+            })
             .unwrap_or(0.0);
 
         let tokens_per_sec = tokens_in_window as f64 / ROLLING_WINDOW_SECS as f64;
@@ -306,12 +293,8 @@ mod tests {
 
         if let Some(accum) = tracker.peers.get_mut("peer-a") {
             accum.token_samples.clear();
-            accum
-                .token_samples
-                .push_back((now.saturating_sub(30), 300));
-            accum
-                .token_samples
-                .push_back((now.saturating_sub(10), 300));
+            accum.token_samples.push_back((now.saturating_sub(30), 300));
+            accum.token_samples.push_back((now.saturating_sub(10), 300));
         }
 
         let snap = tracker.snapshot("peer-a", 0);

@@ -34,12 +34,10 @@ async fn claim_encrypted_proxy_slot(
     req_id: &str,
 ) -> u64 {
     let mut slots = slots.lock().await;
-    let slot = slots
-        .entry(consumer)
-        .or_insert(EncryptedProxySlot {
-            req_id: String::new(),
-            generation: 0,
-        });
+    let slot = slots.entry(consumer).or_insert(EncryptedProxySlot {
+        req_id: String::new(),
+        generation: 0,
+    });
     slot.generation += 1;
     slot.req_id = req_id.to_string();
     slot.generation
@@ -135,9 +133,10 @@ pub async fn dispatch_swarm_proxy_request(
                 let mut response_buffer = String::new();
                 while let Some(Ok(chunk_bytes)) = stream.next().await {
                     if let Ok(chunk_str) = String::from_utf8(chunk_bytes.to_vec()) {
-                        let partial_tokens = accumulate_and_parse_usage(&mut response_buffer, &chunk_str)
-                            .map(|u| u.total_tokens)
-                            .unwrap_or(0);
+                        let partial_tokens =
+                            accumulate_and_parse_usage(&mut response_buffer, &chunk_str)
+                                .map(|u| u.total_tokens)
+                                .unwrap_or(0);
                         proxy_state.stats_stream_progress(
                             &req_id,
                             chunk_str.len() as u64,
@@ -224,7 +223,9 @@ pub async fn dispatch_swarm_encrypted_proxy_request(
             let req_log = req_id.clone();
             let respond = |out: StreamMessage| async {
                 if rr_tx.send((response_channel, out)).await.is_err() {
-                    eprintln!("Swarm encrypted proxy: failed to queue libp2p response for {req_log}");
+                    eprintln!(
+                        "Swarm encrypted proxy: failed to queue libp2p response for {req_log}"
+                    );
                 }
             };
             match crate::inference_ipc::InferenceIpcClient::forward_request(
@@ -336,9 +337,7 @@ pub async fn dispatch_swarm_encrypted_proxy_request(
             stream: Some(true),
         })
         .await;
-        println!(
-            "🔐 Encrypted proxy {req_id}: streaming response to {consumer_peer_id}"
-        );
+        println!("🔐 Encrypted proxy {req_id}: streaming response to {consumer_peer_id}");
 
         let mut body = decrypted;
         ensure_stream_usage(&mut body);

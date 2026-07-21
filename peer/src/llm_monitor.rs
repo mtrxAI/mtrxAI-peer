@@ -1,8 +1,8 @@
 use crate::client_config::ClientConfig;
 use crate::llm_proxy::ProxyState;
 use crate::ollama_client::gpu_probe_mode;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub fn spawn_llm_monitor(proxy_state: ProxyState, _client_config: Arc<RwLock<ClientConfig>>) {
@@ -62,7 +62,9 @@ pub fn spawn_llm_monitor(proxy_state: ProxyState, _client_config: Arc<RwLock<Cli
                     if snapshot.any_connected && !was_ready {
                         println!("✅ LLM server(s) reconnected");
                     } else if !snapshot.any_connected {
-                        println!("⚠️ All attached LLM servers are disconnected — cleared local catalog");
+                        println!(
+                            "⚠️ All attached LLM servers are disconnected — cleared local catalog"
+                        );
                     }
                 }
                 Err(e) => {

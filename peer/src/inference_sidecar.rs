@@ -182,8 +182,7 @@ pub(crate) async fn decrypt_inbound_request(
     }
     let room_secret = room_secret_for_id(proxy_state, room_id).await?;
     let room_root = derive_room_root_key(&room_secret, room_id);
-    let static_keys =
-        load_room_static_keypair(&proxy_state.tx_store, room_id, &room_root)?;
+    let static_keys = load_room_static_keypair(&proxy_state.tx_store, room_id, &room_root)?;
     let mut pk = [0u8; 32];
     pk.copy_from_slice(consumer_ephemeral_pk);
     let session_key = derive_session_key(&static_keys.secret_key, &pk, req_id, room_id);
@@ -210,8 +209,7 @@ pub(crate) async fn decrypt_inbound_request_chunk(
     }
     let room_secret = room_secret_for_id(proxy_state, room_id).await?;
     let room_root = derive_room_root_key(&room_secret, room_id);
-    let static_keys =
-        load_room_static_keypair(&proxy_state.tx_store, room_id, &room_root)?;
+    let static_keys = load_room_static_keypair(&proxy_state.tx_store, room_id, &room_root)?;
     let mut pk = [0u8; 32];
     pk.copy_from_slice(consumer_ephemeral_pk);
     let session_key = derive_session_key(&static_keys.secret_key, &pk, req_id, room_id);
@@ -236,8 +234,7 @@ pub async fn encrypt_outbound_response(
     pk.copy_from_slice(consumer_ephemeral_pk);
     let room_secret = room_secret_for_id(proxy_state, room_id).await?;
     let room_root = derive_room_root_key(&room_secret, room_id);
-    let static_keys =
-        load_room_static_keypair(&proxy_state.tx_store, room_id, &room_root)?;
+    let static_keys = load_room_static_keypair(&proxy_state.tx_store, room_id, &room_root)?;
     let session_key = derive_session_key(&static_keys.secret_key, &pk, req_id, room_id);
     let enc = encrypt_payload(&session_key, req_id, path, room_id, plaintext)?;
     Ok((enc.nonce, enc.ciphertext))

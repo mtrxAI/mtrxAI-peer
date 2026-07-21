@@ -78,9 +78,6 @@ mod tests {
 
     #[test]
     fn auth_hash_stable() {
-        assert_eq!(
-            auth_hash_from_secret("test"),
-            auth_hash_from_secret("test")
-        );
+        assert_eq!(auth_hash_from_secret("test"), auth_hash_from_secret("test"));
     }
 }

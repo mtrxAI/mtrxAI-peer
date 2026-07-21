@@ -1,34 +1,33 @@
 use crate::client_config::{swarm_accepts_jobs, SwarmMembership};
 use crate::network_catalog::sync_unified_network_models;
 use crate::p2p_protocol::{
-    catalog_topic, compact_gpu_for_gossip, compact_models_for_gossip,
-    compact_peer_info_for_gossip, decode_gossip, encode_gossip, fit_catalog_gossip,
-    model_start_topic, token_namespace, CachedPeerRecord, GossipMessage, StreamMessage,
-    PROXY_PROTOCOL, PROXY_PROTOCOL_V2,
-};
-use crate::proxy_e2ee::encrypt_proxy_request;
-use crate::security::{
-    load_or_create_libp2p_keypair, peer_id_from_multiaddr, resolve_libp2p_peer_id,
-    verify_proxy_auth, e2ee_enabled,
+    catalog_topic, compact_gpu_for_gossip, compact_models_for_gossip, compact_peer_info_for_gossip,
+    decode_gossip, encode_gossip, fit_catalog_gossip, model_start_topic, token_namespace,
+    CachedPeerRecord, GossipMessage, StreamMessage, PROXY_PROTOCOL, PROXY_PROTOCOL_V2,
 };
 use crate::p2p_proxy::{
     dispatch_swarm_encrypted_proxy_request, dispatch_swarm_proxy_request, EncryptedProxySlot,
     ReverseProxyTx, RrResponseTx,
 };
+use crate::proxy_e2ee::encrypt_proxy_request;
+use crate::security::{
+    e2ee_enabled, load_or_create_libp2p_keypair, peer_id_from_multiaddr, resolve_libp2p_peer_id,
+    verify_proxy_auth,
+};
 use crate::shared::{
-    ModelStartAction, ModelStartOfferState, ModelStartRequestState, PeerDirection,
-    PeerModerationAction, PeerRegistry, ProxyRequestCommand, SharedState,
-    swarm_peer_registry_key, TrackedPeer,
+    swarm_peer_registry_key, ModelStartAction, ModelStartOfferState, ModelStartRequestState,
+    PeerDirection, PeerModerationAction, PeerRegistry, ProxyRequestCommand, SharedState,
+    TrackedPeer,
 };
 use crate::swarm_manager::sync_swarm_peer_connections;
 use async_trait::async_trait;
 use futures_util::StreamExt;
+use libp2p::request_response::ResponseChannel;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::{
-    gossipsub, identify, noise, rendezvous, request_response, tcp, yamux, Multiaddr, PeerId,
-    Swarm, SwarmBuilder,
+    gossipsub, identify, noise, rendezvous, request_response, tcp, yamux, Multiaddr, PeerId, Swarm,
+    SwarmBuilder,
 };
-use libp2p::request_response::ResponseChannel;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -211,11 +210,7 @@ impl request_response::Codec for ProxyCodec {
     type Request = StreamMessage;
     type Response = StreamMessage;
 
-    async fn read_request<T>(
-        &mut self,
-        _: &Self::Protocol,
-        io: &mut T,
-    ) -> io::Result<Self::Request>
+    async fn read_request<T>(&mut self, _: &Self::Protocol, io: &mut T) -> io::Result<Self::Request>
     where
         T: futures_util::AsyncRead + Unpin + Send,
     {
@@ -268,7 +263,10 @@ where
     loop {
         let n = io.read(&mut byte).await?;
         if n == 0 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "stream closed"));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "stream closed",
+            ));
         }
         if byte[0] == b'\n' {
             break;
@@ -283,7 +281,8 @@ where
     T: futures_util::AsyncWrite + Unpin + Send,
 {
     use futures_util::AsyncWriteExt;
-    let mut line = serde_json::to_string(msg).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let mut line =
+        serde_json::to_string(msg).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     line.push('\n');
     io.write_all(line.as_bytes()).await?;
     io.flush().await?;
@@ -319,17 +318,20 @@ pub struct P2pManager {
     mtrxai_to_libp2p: Arc<Mutex<HashMap<String, PeerId>>>,
     libp2p_to_mtrxai: Arc<Mutex<HashMap<PeerId, String>>>,
     pending_proxy_by_req_id: Arc<Mutex<HashMap<String, mpsc::Sender<Result<String, String>>>>>,
-    pending_proxy_by_outbound_id: Arc<Mutex<HashMap<request_response::OutboundRequestId, PendingOutboundProxy>>>,
+    pending_proxy_by_outbound_id:
+        Arc<Mutex<HashMap<request_response::OutboundRequestId, PendingOutboundProxy>>>,
     pending_outbound_proxies: Arc<Mutex<Vec<PendingOutboundProxy>>>,
     pending_incoming_proxy: Arc<Mutex<HashMap<String, PendingIncomingProxy>>>,
     peer_latency_ms: Arc<Mutex<HashMap<String, u64>>>,
     pending_ping: Arc<Mutex<HashMap<request_response::OutboundRequestId, (String, Instant)>>>,
     rr_response_tx: RrResponseTx,
-    rr_response_rx: Arc<Mutex<Option<mpsc::Receiver<(ResponseChannel<StreamMessage>, StreamMessage)>>>>,
+    rr_response_rx:
+        Arc<Mutex<Option<mpsc::Receiver<(ResponseChannel<StreamMessage>, StreamMessage)>>>>,
     reverse_proxy_tx: ReverseProxyTx,
     reverse_proxy_rx: Arc<Mutex<Option<mpsc::Receiver<(PeerId, StreamMessage)>>>>,
     pending_encrypted_streams: Arc<Mutex<HashMap<String, PendingEncryptedStreamCtx>>>,
-    pending_encrypted_stream_early: Arc<Mutex<HashMap<String, BTreeMap<u32, EncryptedStreamChunkData>>>>,
+    pending_encrypted_stream_early:
+        Arc<Mutex<HashMap<String, BTreeMap<u32, EncryptedStreamChunkData>>>>,
     pending_reverse_proxies: Arc<Mutex<HashMap<PeerId, Vec<StreamMessage>>>>,
     active_encrypted_proxies: Arc<Mutex<HashMap<PeerId, EncryptedProxySlot>>>,
     outgoing_model_requests: Arc<Mutex<Vec<ModelStartRequestState>>>,
@@ -504,9 +506,10 @@ impl P2pManager {
         )
         .map_err(|e| anyhow::anyhow!("gossipsub behaviour: {e}"))?;
 
-        let identify = identify::Behaviour::new(
-            identify::Config::new("/mtrxai/1.0.0".to_string(), keypair.public()),
-        );
+        let identify = identify::Behaviour::new(identify::Config::new(
+            "/mtrxai/1.0.0".to_string(),
+            keypair.public(),
+        ));
         let proxy = request_response::Behaviour::new(
             [
                 (
@@ -531,7 +534,11 @@ impl P2pManager {
 
         let mut swarm = SwarmBuilder::with_existing_identity(keypair)
             .with_tokio()
-            .with_tcp(tcp::Config::default(), noise::Config::new, yamux::Config::default)?
+            .with_tcp(
+                tcp::Config::default(),
+                noise::Config::new,
+                yamux::Config::default,
+            )?
             .with_dns()?
             .with_behaviour(|_| behaviour)?
             .build();
@@ -552,10 +559,7 @@ impl P2pManager {
 
         self.set_connected(true).await;
         if let Err(e) = self.publish_catalog(&mut swarm).await {
-            eprintln!(
-                "P2P catalog publish warning (swarm {}): {e}",
-                self.swarm_id
-            );
+            eprintln!("P2P catalog publish warning (swarm {}): {e}", self.swarm_id);
         }
 
         let mut catalog_interval = tokio::time::interval(Duration::from_secs(30));
@@ -700,12 +704,10 @@ impl P2pManager {
                 .behaviour_mut()
                 .rendezvous
                 .register(ns.clone(), *bootnode, None);
-            swarm.behaviour_mut().rendezvous.discover(
-                Some(ns.clone()),
-                None,
-                None,
-                *bootnode,
-            );
+            swarm
+                .behaviour_mut()
+                .rendezvous
+                .discover(Some(ns.clone()), None, None, *bootnode);
         }
         Ok(())
     }
@@ -716,12 +718,10 @@ impl P2pManager {
         }
         let ns = self.rendezvous_namespace().await?;
         for bootnode in &self.bootnode_peer_ids {
-            swarm.behaviour_mut().rendezvous.discover(
-                Some(ns.clone()),
-                None,
-                None,
-                *bootnode,
-            );
+            swarm
+                .behaviour_mut()
+                .rendezvous
+                .discover(Some(ns.clone()), None, None, *bootnode);
         }
         Ok(())
     }
@@ -835,10 +835,7 @@ impl P2pManager {
             "listen_addrs": addrs,
         });
         if let Err(e) = client.post(&register_url).json(&reg_body).send().await {
-            eprintln!(
-                "Swarm {} presence register failed: {e}",
-                self.swarm_id
-            );
+            eprintln!("Swarm {} presence register failed: {e}", self.swarm_id);
         }
 
         let peers_url = crate::lobby_url::lobby_api_url(lobby, "/api/public/p2p/swarm/peers");
@@ -909,6 +906,10 @@ impl P2pManager {
 
     async fn refresh_local_catalog(&self) -> anyhow::Result<()> {
         if self.proxy_state.llm_registry.inner.attached_count().await == 0 {
+            let mut state = self.shared_state.lock().await;
+            state.local_models.clear();
+            state.local_models_full.clear();
+            state.local_model_collisions.clear();
             return Ok(());
         }
         let snapshot = self
@@ -1014,8 +1015,9 @@ impl P2pManager {
             "transport"
         };
         let provider_static_pk = {
-            let e2ee_room = crate::proxy_e2ee::e2ee_room_id_for_swarm_membership(&cfg, &self.swarm_id)
-                .unwrap_or_else(|| self.swarm_id.clone());
+            let e2ee_room =
+                crate::proxy_e2ee::e2ee_room_id_for_swarm_membership(&cfg, &self.swarm_id)
+                    .unwrap_or_else(|| self.swarm_id.clone());
             crate::proxy_e2ee::provider_static_public_key(
                 &self.proxy_state.tx_store,
                 &cfg,
@@ -1058,10 +1060,7 @@ impl P2pManager {
 
     async fn publish_catalog(&self, swarm: &mut Swarm<MtrxaiBehaviour>) -> anyhow::Result<()> {
         if let Err(e) = self.refresh_local_catalog().await {
-            eprintln!(
-                "P2P catalog refresh warning (swarm {}): {e}",
-                self.swarm_id
-            );
+            eprintln!("P2P catalog refresh warning (swarm {}): {e}", self.swarm_id);
         }
         let state = self.shared_state.lock().await;
         let models = compact_models_for_gossip(&state.local_models_full);
@@ -1095,8 +1094,9 @@ impl P2pManager {
             "transport"
         };
         let provider_static_pk = {
-            let e2ee_room = crate::proxy_e2ee::e2ee_room_id_for_swarm_membership(&cfg, &self.swarm_id)
-                .unwrap_or_else(|| self.swarm_id.clone());
+            let e2ee_room =
+                crate::proxy_e2ee::e2ee_room_id_for_swarm_membership(&cfg, &self.swarm_id)
+                    .unwrap_or_else(|| self.swarm_id.clone());
             crate::proxy_e2ee::provider_static_public_key(
                 &self.proxy_state.tx_store,
                 &cfg,
@@ -1155,8 +1155,15 @@ impl P2pManager {
         let cache = self.peer_cache.lock().await;
         let mut all_peers: Vec<&CachedPeerRecord> = cache.values().collect();
         all_peers.push(&local);
-        let mut by_name: HashMap<String, (serde_json::Value, Vec<serde_json::Value>, HashSet<String>, u64)> =
-            HashMap::new();
+        let mut by_name: HashMap<
+            String,
+            (
+                serde_json::Value,
+                Vec<serde_json::Value>,
+                HashSet<String>,
+                u64,
+            ),
+        > = HashMap::new();
 
         for peer in all_peers {
             if !peer.accepting_jobs {
@@ -1171,17 +1178,14 @@ impl P2pManager {
                     .and_then(|s| s.get("loaded"))
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                let entry = by_name.entry(name.to_string()).or_insert_with(|| {
-                    (
-                        model.clone(),
-                        Vec::new(),
-                        HashSet::new(),
-                        0,
-                    )
-                });
+                let entry = by_name
+                    .entry(name.to_string())
+                    .or_insert_with(|| (model.clone(), Vec::new(), HashSet::new(), 0));
                 entry.0 = crate::network_catalog::prefer_richer_template(&entry.0, model);
                 if entry.2.insert(peer.peer_id.clone()) {
-                    entry.1.push(serde_json::json!({ "id": peer.peer_id, "loaded": loaded }));
+                    entry
+                        .1
+                        .push(serde_json::json!({ "id": peer.peer_id, "loaded": loaded }));
                     if loaded {
                         entry.3 += 1;
                     }
@@ -1193,10 +1197,7 @@ impl P2pManager {
             .into_iter()
             .map(|(name, (template, peers, _, loaded_count))| {
                 let representative = peers.first().cloned().unwrap_or(serde_json::json!(null));
-                let mut obj = template
-                    .as_object()
-                    .cloned()
-                    .unwrap_or_default();
+                let mut obj = template.as_object().cloned().unwrap_or_default();
                 obj.insert("name".to_string(), serde_json::json!(name));
                 obj.insert("_swarm_id".to_string(), serde_json::json!(self.swarm_id));
                 obj.insert("_peer".to_string(), representative);
@@ -1204,11 +1205,14 @@ impl P2pManager {
                 obj.insert("_peer_count".to_string(), serde_json::json!(peers.len()));
                 obj.insert("_loaded_count".to_string(), serde_json::json!(loaded_count));
                 obj.insert("_network_scope".to_string(), serde_json::json!("swarm"));
-                obj.insert("_swarms".to_string(), serde_json::json!([{
-                    "swarm_id": self.swarm_id,
-                    "peer_count": peers.len(),
-                    "loaded_count": loaded_count,
-                }]));
+                obj.insert(
+                    "_swarms".to_string(),
+                    serde_json::json!([{
+                        "swarm_id": self.swarm_id,
+                        "peer_count": peers.len(),
+                        "loaded_count": loaded_count,
+                    }]),
+                );
                 serde_json::Value::Object(obj)
             })
             .collect();
@@ -1240,9 +1244,10 @@ impl P2pManager {
         event: SwarmEvent<MtrxaiBehaviourEvent>,
     ) -> anyhow::Result<()> {
         match event {
-            SwarmEvent::Behaviour(MtrxaiBehaviourEvent::Gossipsub(
-                gossipsub::Event::Message { message, .. },
-            )) => {
+            SwarmEvent::Behaviour(MtrxaiBehaviourEvent::Gossipsub(gossipsub::Event::Message {
+                message,
+                ..
+            })) => {
                 if let Ok(gossip) = decode_gossip(&message.data) {
                     self.handle_gossip(swarm, gossip).await?;
                 }
@@ -1274,29 +1279,24 @@ impl P2pManager {
                     self.swarm_id, error
                 );
             }
-            SwarmEvent::Behaviour(MtrxaiBehaviourEvent::Identify(
-                identify::Event::Received { .. },
-            )) => {
+            SwarmEvent::Behaviour(MtrxaiBehaviourEvent::Identify(identify::Event::Received {
+                ..
+            })) => {
                 // Dial targets come from catalog/presence (MTRXAI_P2P_ANNOUNCE_HOST).
                 // Identify listen addrs are often container-local IPs that go stale.
             }
             SwarmEvent::Behaviour(MtrxaiBehaviourEvent::Proxy(event)) => match event {
                 request_response::Event::Message { peer, message, .. } => {
-                    self.handle_proxy_rr_message(swarm, peer, message)
-                        .await?;
+                    self.handle_proxy_rr_message(swarm, peer, message).await?;
                 }
                 request_response::Event::OutboundFailure {
-                    request_id,
-                    error,
-                    ..
+                    request_id, error, ..
                 } => {
                     self.handle_proxy_outbound_failure(swarm, request_id, error)
                         .await;
                 }
                 request_response::Event::InboundFailure {
-                    request_id,
-                    error,
-                    ..
+                    request_id, error, ..
                 } => {
                     eprintln!(
                         "Swarm {} inbound proxy request {:?} failed: {error}",
@@ -1328,7 +1328,8 @@ impl P2pManager {
                     return Ok(());
                 }
                 self.flush_pending_proxies_for_peer(swarm, peer_id).await;
-                self.flush_pending_reverse_proxies_for_peer(swarm, peer_id).await;
+                self.flush_pending_reverse_proxies_for_peer(swarm, peer_id)
+                    .await;
                 if self.bootnode_peer_ids.contains(&peer_id) {
                     let _ = self.rendezvous_register_and_discover(swarm).await;
                     return Ok(());
@@ -1337,10 +1338,7 @@ impl P2pManager {
                     return Ok(());
                 }
                 swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
-                println!(
-                    "🤝 Swarm {} P2P connected to {}",
-                    self.swarm_id, peer_id
-                );
+                println!("🤝 Swarm {} P2P connected to {}", self.swarm_id, peer_id);
                 self.track_libp2p_peer(peer_id, PeerDirection::Inbound)
                     .await;
                 self.map_connected_mtrxai_peer(peer_id).await;
@@ -1355,10 +1353,7 @@ impl P2pManager {
                     self.probe_peer_latency(swarm, &mtrxai, peer_id).await;
                 }
                 let sync = self.build_catalog_sync().await;
-                let _ = swarm
-                    .behaviour_mut()
-                    .proxy
-                    .send_request(&peer_id, sync);
+                let _ = swarm.behaviour_mut().proxy.send_request(&peer_id, sync);
             }
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
                 if !self.bootnode_peer_ids.contains(&peer_id) && !swarm.is_connected(&peer_id) {
@@ -1456,11 +1451,7 @@ impl P2pManager {
                         .proxy
                         .send_response(channel, StreamMessage::Pong);
                 }
-                StreamMessage::ProxyRequest {
-                    req_id,
-                    path,
-                    body,
-                } => {
+                StreamMessage::ProxyRequest { req_id, path, body } => {
                     if e2ee_enabled() {
                         let _ = swarm.behaviour_mut().proxy.send_response(
                             channel,
@@ -1566,14 +1557,8 @@ impl P2pManager {
                     done,
                     ..
                 } => {
-                    self.handle_encrypted_stream_chunk(
-                        req_id,
-                        seq,
-                        nonce,
-                        ciphertext,
-                        done,
-                    )
-                    .await;
+                    self.handle_encrypted_stream_chunk(req_id, seq, nonce, ciphertext, done)
+                        .await;
                     let _ = swarm
                         .behaviour_mut()
                         .proxy
@@ -1609,8 +1594,7 @@ impl P2pManager {
                         .send_response(channel, StreamMessage::Pong);
                 }
                 StreamMessage::ProxyRequestChunk { req_id, seq, chunk } => {
-                    if let Some(pending) =
-                        self.pending_incoming_proxy.lock().await.get_mut(&req_id)
+                    if let Some(pending) = self.pending_incoming_proxy.lock().await.get_mut(&req_id)
                     {
                         pending.chunks.push((seq, chunk));
                     }
@@ -1623,8 +1607,7 @@ impl P2pManager {
                     let pending = self.pending_incoming_proxy.lock().await.remove(&req_id);
                     if let Some(mut pending) = pending {
                         pending.chunks.sort_by_key(|(seq, _)| *seq);
-                        let body_str: String =
-                            pending.chunks.into_iter().map(|(_, c)| c).collect();
+                        let body_str: String = pending.chunks.into_iter().map(|(_, c)| c).collect();
                         match serde_json::from_str::<serde_json::Value>(&body_str) {
                             Ok(body) => {
                                 dispatch_swarm_proxy_request(
@@ -1662,7 +1645,8 @@ impl P2pManager {
                     }
                 }
                 StreamMessage::ProxyResponseChunk { req_id, chunk } => {
-                    self.proxy_state.stats_stream_progress(&req_id, chunk.len() as u64, 0);
+                    self.proxy_state
+                        .stats_stream_progress(&req_id, chunk.len() as u64, 0);
                     let tx = self
                         .pending_proxy_by_req_id
                         .lock()
@@ -1713,7 +1697,11 @@ impl P2pManager {
                         self.peer_latency_ms.lock().await.insert(mtrxai, ms);
                     }
                 }
-                StreamMessage::ProxyResponse { req_id, body, error } => {
+                StreamMessage::ProxyResponse {
+                    req_id,
+                    body,
+                    error,
+                } => {
                     self.pending_proxy_by_outbound_id
                         .lock()
                         .await
@@ -1759,9 +1747,7 @@ impl P2pManager {
                         .await
                         .remove(&request_id);
                     if let Some(err) = error {
-                        if let Some(tx) =
-                            self.pending_proxy_by_req_id.lock().await.remove(req_id)
-                        {
+                        if let Some(tx) = self.pending_proxy_by_req_id.lock().await.remove(req_id) {
                             self.proxy_state.stats_request_error(req_id);
                             let _ = tx.send(Err(err.clone())).await;
                         }
@@ -1791,7 +1777,7 @@ impl P2pManager {
                             {
                                 let _ = tx
                                     .send(Err(
-                                        "missing ephemeral secret for encrypted stream".into(),
+                                        "missing ephemeral secret for encrypted stream".into()
                                     ))
                                     .await;
                             }
@@ -1803,7 +1789,7 @@ impl P2pManager {
                             {
                                 let _ = tx
                                     .send(Err(
-                                        "missing provider static key for encrypted stream".into(),
+                                        "missing provider static key for encrypted stream".into()
                                     ))
                                     .await;
                             }
@@ -1850,7 +1836,9 @@ impl P2pManager {
                             return Ok(());
                         };
                         let Some(secret) = pending.consumer_ephemeral_secret else {
-                            let _ = tx.send(Err("missing ephemeral secret for decrypt".into())).await;
+                            let _ = tx
+                                .send(Err("missing ephemeral secret for decrypt".into()))
+                                .await;
                             return Ok(());
                         };
                         let Some(provider_pk) = pending.provider_static_public else {
@@ -1873,14 +1861,12 @@ impl P2pManager {
                         .await
                         {
                             Ok(body) => {
-                                let usage =
-                                    crate::token_usage::parse_usage_from_buffer(&body).unwrap_or(
-                                        crate::token_usage::TokenUsage {
-                                            prompt_tokens: 0,
-                                            completion_tokens: 0,
-                                            total_tokens: 0,
-                                        },
-                                    );
+                                let usage = crate::token_usage::parse_usage_from_buffer(&body)
+                                    .unwrap_or(crate::token_usage::TokenUsage {
+                                        prompt_tokens: 0,
+                                        completion_tokens: 0,
+                                        total_tokens: 0,
+                                    });
                                 self.proxy_state.stats_request_complete(
                                     req_id,
                                     usage.total_tokens,
@@ -1979,17 +1965,20 @@ impl P2pManager {
                 if !accepting {
                     return Ok(());
                 }
-                self.incoming_model_offers.lock().await.push(ModelStartOfferState {
-                    req_id,
-                    model,
-                    cluster_id: None,
-                    swarm_id: Some(self.swarm_id.clone()),
-                    requested_by,
-                    estimated_vram_mb: 4096,
-                    disk_size_mb: None,
-                    run_on_requester: None,
-                    received_at_unix: unix_now(),
-                });
+                self.incoming_model_offers
+                    .lock()
+                    .await
+                    .push(ModelStartOfferState {
+                        req_id,
+                        model,
+                        cluster_id: None,
+                        swarm_id: Some(self.swarm_id.clone()),
+                        requested_by,
+                        estimated_vram_mb: 4096,
+                        disk_size_mb: None,
+                        run_on_requester: None,
+                        received_at_unix: unix_now(),
+                    });
                 self.sync_model_start_state().await;
             }
             GossipMessage::ModelStartOffer { .. }
@@ -2159,10 +2148,7 @@ impl P2pManager {
                 "⏳ Swarm {} queued proxy {} for {} until P2P connect",
                 self.swarm_id, pending.req_id, target_mtrxai_peer
             );
-            self.pending_outbound_proxies
-                .lock()
-                .await
-                .push(pending);
+            self.pending_outbound_proxies.lock().await.push(pending);
             return Ok(());
         }
 
@@ -2175,14 +2161,9 @@ impl P2pManager {
         swarm: &mut Swarm<MtrxaiBehaviour>,
         mut pending: PendingOutboundProxy,
     ) {
-        pending.libp2p_peer = self
-            .resolve_libp2p_peer(&pending.target_mtrxai_peer)
-            .await;
+        pending.libp2p_peer = self.resolve_libp2p_peer(&pending.target_mtrxai_peer).await;
         if !swarm.is_connected(&pending.libp2p_peer) {
-            self.pending_outbound_proxies
-                .lock()
-                .await
-                .push(pending);
+            self.pending_outbound_proxies.lock().await.push(pending);
             return;
         }
 
@@ -2233,11 +2214,8 @@ impl P2pManager {
                     msg
                 }
                 Err(e) => {
-                    self.fail_proxy_request(
-                        &pending.req_id,
-                        format!("E2EE encrypt failed: {e}"),
-                    )
-                    .await;
+                    self.fail_proxy_request(&pending.req_id, format!("E2EE encrypt failed: {e}"))
+                        .await;
                     return;
                 }
             }
@@ -2403,14 +2381,12 @@ impl P2pManager {
                                 }))
                                 .await;
                         }
-                        let usage =
-                            crate::token_usage::parse_usage_from_buffer(&ctx.line_buf).unwrap_or(
-                                crate::token_usage::TokenUsage {
-                                    prompt_tokens: 0,
-                                    completion_tokens: 0,
-                                    total_tokens: 0,
-                                },
-                            );
+                        let usage = crate::token_usage::parse_usage_from_buffer(&ctx.line_buf)
+                            .unwrap_or(crate::token_usage::TokenUsage {
+                                prompt_tokens: 0,
+                                completion_tokens: 0,
+                                total_tokens: 0,
+                            });
                         self.proxy_state.stats_request_complete(
                             req_id,
                             usage.total_tokens,
@@ -2425,7 +2401,9 @@ impl P2pManager {
                             .remove(req_id);
                         println!(
                             "✅ Swarm {} decrypted encrypted proxy {} ({} chunks)",
-                            self.swarm_id, req_id, chunk.seq + 1
+                            self.swarm_id,
+                            req_id,
+                            chunk.seq + 1
                         );
                         return;
                     }
@@ -2594,18 +2572,21 @@ impl P2pManager {
                 if swarm_id.as_deref() != Some(self.swarm_id.as_str()) {
                     return Ok(());
                 }
-                self.outgoing_model_requests.lock().await.push(ModelStartRequestState {
-                    req_id: req_id.clone(),
-                    model: model.clone(),
-                    cluster_id: None,
-                    swarm_id: Some(self.swarm_id.clone()),
-                    status: "pending".to_string(),
-                    progress_pct: None,
-                    provider_peer: None,
-                    peers: None,
-                    message: None,
-                    updated_at_unix: unix_now(),
-                });
+                self.outgoing_model_requests
+                    .lock()
+                    .await
+                    .push(ModelStartRequestState {
+                        req_id: req_id.clone(),
+                        model: model.clone(),
+                        cluster_id: None,
+                        swarm_id: Some(self.swarm_id.clone()),
+                        status: "pending".to_string(),
+                        progress_pct: None,
+                        provider_peer: None,
+                        peers: None,
+                        message: None,
+                        updated_at_unix: unix_now(),
+                    });
                 self.sync_model_start_state().await;
                 let gossip = GossipMessage::ModelStartRequest {
                     req_id,
@@ -2642,7 +2623,11 @@ impl P2pManager {
         Ok(())
     }
 
-    async fn handle_moderation(&self, swarm: &mut Swarm<MtrxaiBehaviour>, action: PeerModerationAction) {
+    async fn handle_moderation(
+        &self,
+        swarm: &mut Swarm<MtrxaiBehaviour>,
+        action: PeerModerationAction,
+    ) {
         if let PeerModerationAction::CloseConnections { peer_id } = action {
             if let Some(libp2p_id) = self.mtrxai_to_libp2p.lock().await.get(&peer_id).copied() {
                 let _ = swarm.disconnect_peer_id(libp2p_id);

@@ -22,12 +22,12 @@ use tracing::Level;
 use crate::agent_compat::{
     apply_ollama_body_defaults_with_default, chat_completion_to_responses,
     chat_response_content_type, log_request_summary, log_response_summary,
-    normalize_chat_request_with_default, parse_chat_response_body,
-    rewrite_chat_response, AgentDebugSnapshot, AgentResponseFormat, SseTransformState,
+    normalize_chat_request_with_default, parse_chat_response_body, rewrite_chat_response,
+    AgentDebugSnapshot, AgentResponseFormat, SseTransformState,
 };
 use crate::client_config::ClientConfig;
 use crate::llm_registry::RegistryHandle;
-use crate::shared::{PeerRegistry, ProxyRequestCommand, RuntimeEventTx, SharedState, NetworkMode};
+use crate::shared::{NetworkMode, PeerRegistry, ProxyRequestCommand, RuntimeEventTx, SharedState};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 fn cluster_id_for_model(network_models: &[Value], model: &str) -> Option<String> {
@@ -60,15 +60,13 @@ fn swarm_id_for_model(network_models: &[Value], model: &str) -> Option<String> {
         .and_then(|m| {
             m.get("_swarm_id")
                 .or_else(|| {
-                    m.get("_swarms")
-                        .and_then(|s| s.as_array())
-                        .and_then(|arr| {
-                            arr.iter()
-                                .max_by_key(|s| {
-                                    s.get("peer_count").and_then(|v| v.as_u64()).unwrap_or(0)
-                                })
-                                .and_then(|s| s.get("swarm_id"))
-                        })
+                    m.get("_swarms").and_then(|s| s.as_array()).and_then(|arr| {
+                        arr.iter()
+                            .max_by_key(|s| {
+                                s.get("peer_count").and_then(|v| v.as_u64()).unwrap_or(0)
+                            })
+                            .and_then(|s| s.get("swarm_id"))
+                    })
                 })
                 .and_then(|r| r.as_str())
                 .map(String::from)
@@ -231,10 +229,7 @@ impl ProxyState {
         model: &str,
     ) -> Result<
         std::pin::Pin<
-            Box<
-                dyn futures_util::Stream<Item = Result<axum::body::Bytes, reqwest::Error>>
-                    + Send,
-            >,
+            Box<dyn futures_util::Stream<Item = Result<axum::body::Bytes, reqwest::Error>> + Send>,
         >,
         String,
     > {
@@ -248,8 +243,7 @@ impl ProxyState {
 
         // Remote proxy clients send Ollama `/api/chat`. OpenAI-compat backends (inference-cell /
         // llama.cpp) only expose `/v1/chat/completions` — match the local HTTP translation path.
-        let translate_ollama_chat =
-            !backend.supports_ollama_native() && path == "/api/chat";
+        let translate_ollama_chat = !backend.supports_ollama_native() && path == "/api/chat";
 
         let (forward_path, forward_body, model_label) = if translate_ollama_chat {
             let mut normalized = body.clone();
@@ -413,7 +407,9 @@ async fn require_backend_for_model(
         ))
 }
 
-async fn require_backend(state: &ProxyState) -> Result<Arc<crate::llm_backend::LlmBackend>, (StatusCode, String)> {
+async fn require_backend(
+    state: &ProxyState,
+) -> Result<Arc<crate::llm_backend::LlmBackend>, (StatusCode, String)> {
     require_backend_for_model(state, None).await
 }
 
@@ -441,11 +437,7 @@ pub struct HealthResponse {
     pub llm_ready: bool,
 }
 
-pub async fn run_proxy_server(
-    host: &str,
-    port: u16,
-    state: ProxyState,
-) -> Result<()> {
+pub async fn run_proxy_server(host: &str, port: u16, state: ProxyState) -> Result<()> {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -471,7 +463,10 @@ pub async fn run_proxy_server(
             }
         }
     } else {
-        println!("⏳ Setup incomplete — open http://{}:{}/ to finish configuration", host, port);
+        println!(
+            "⏳ Setup incomplete — open http://{}:{}/ to finish configuration",
+            host, port
+        );
     }
 
     let addr = format!("{}:{}", host, port);
@@ -497,10 +492,10 @@ pub async fn run_proxy_server(
             crate::security::local_auth::local_proxy_auth_middleware,
         ))
         .layer(
-        TraceLayer::new_for_http()
-            .make_span_with(tower_http::trace::DefaultMakeSpan::new().level(Level::INFO))
-            .on_response(tower_http::trace::DefaultOnResponse::new().level(Level::INFO)),
-    );
+            TraceLayer::new_for_http()
+                .make_span_with(tower_http::trace::DefaultMakeSpan::new().level(Level::INFO))
+                .on_response(tower_http::trace::DefaultOnResponse::new().level(Level::INFO)),
+        );
 
     println!("✅ Client server is ready!\n");
 
@@ -634,10 +629,11 @@ async fn list_models(State(state): State<ProxyState>) -> Result<Response, (Statu
                 for network_model in &st.network_models {
                     if let Some(name) = network_model.get("name").and_then(|n| n.as_str()) {
                         if !local_names.contains(name) {
-                            models_array
-                                .push(crate::network_catalog::ollama_tag_from_network_model(
+                            models_array.push(
+                                crate::network_catalog::ollama_tag_from_network_model(
                                     network_model,
-                                ));
+                                ),
+                            );
                         }
                     }
                 }
@@ -708,8 +704,14 @@ async fn handle_agent_chat_request(
     }
 
     if is_remote {
-        return forward_agent_remote(state, &actual_model, normalized_body, stream, response_format)
-            .await;
+        return forward_agent_remote(
+            state,
+            &actual_model,
+            normalized_body,
+            stream,
+            response_format,
+        )
+        .await;
     }
 
     forward_agent_local(state, &body_json, &actual_model, stream, response_format).await
@@ -727,9 +729,7 @@ async fn dispatch_remote_proxy(
         let p2p_mode = client_config.read().await.p2p_mode;
         let scope = network_scope_for_model(&lock.network_models, actual_model, p2p_mode)
             .ok_or_else(|| {
-                format!(
-                    "No network advertises model {actual_model} for p2p_mode {p2p_mode:?}"
-                )
+                format!("No network advertises model {actual_model} for p2p_mode {p2p_mode:?}")
             })?;
         let cluster_id = if scope == NetworkScope::Cluster {
             cluster_id_for_model(&lock.network_models, actual_model)
@@ -907,7 +907,12 @@ async fn forward_agent_local(
     let resp = backend
         .forward_post_raw(&path, body.to_string())
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Failed to reach LLM backend: {}", e)))?;
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to reach LLM backend: {}", e),
+            )
+        })?;
 
     let status = resp.status().as_u16();
     if status < 200 || status >= 300 {
@@ -976,10 +981,12 @@ async fn forward_agent_local(
             .unwrap());
     }
 
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Failed to read LLM response: {}", e)))?;
+    let bytes = resp.bytes().await.map_err(|e| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("Failed to read LLM response: {}", e),
+        )
+    })?;
     let parsed: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     let (rewritten, resp_summary) = rewrite_chat_response(parsed);
     log_response_summary(&resp_summary);
@@ -1033,7 +1040,10 @@ async fn handle_proxy_request(
     }
 
     if is_remote {
-        println!("🌐 Local model not found: '{}'. Routing to remote peer...", actual_model);
+        println!(
+            "🌐 Local model not found: '{}'. Routing to remote peer...",
+            actual_model
+        );
 
         let mut rx = dispatch_remote_proxy(
             &state.shared_state,
@@ -1119,10 +1129,12 @@ async fn handle_proxy_request(
                         .unwrap());
                 }
 
-                let bytes = resp
-                    .bytes()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Failed to read LLM response: {}", e)))?;
+                let bytes = resp.bytes().await.map_err(|e| {
+                    (
+                        StatusCode::BAD_GATEWAY,
+                        format!("Failed to read LLM response: {}", e),
+                    )
+                })?;
 
                 let response_ct = if upstream_ct.contains("application/json") {
                     "application/json"
@@ -1156,12 +1168,16 @@ async fn chat_completion(
     // If the selected backend is OpenAI-compatible (e.g. inference-cell), translate the request
     // to `/v1/chat/completions` and translate the response back to an Ollama-shaped response.
 
-    let parsed = serde_json::from_str::<serde_json::Value>(&body).unwrap_or(serde_json::Value::Null);
+    let parsed =
+        serde_json::from_str::<serde_json::Value>(&body).unwrap_or(serde_json::Value::Null);
     let model = parsed
         .get("model")
         .and_then(|m| m.as_str())
         .map(str::to_string);
-    let stream = parsed.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
+    let stream = parsed
+        .get("stream")
+        .and_then(|s| s.as_bool())
+        .unwrap_or(false);
 
     // Preserve remote-peer routing, but base it on registry resolution (more reliable than
     // `local_models` during startup / refresh races).
@@ -1203,7 +1219,8 @@ async fn forward_ollama_chat_via_openai(
         default_predict,
         default_ctx,
     );
-    let mut normalized = serde_json::from_str::<serde_json::Value>(&body_str).unwrap_or(serde_json::Value::Null);
+    let mut normalized =
+        serde_json::from_str::<serde_json::Value>(&body_str).unwrap_or(serde_json::Value::Null);
     normalized["stream"] = serde_json::Value::Bool(stream);
 
     // Ollama uses "model" already; OpenAI compat expects it too.
@@ -1218,7 +1235,12 @@ async fn forward_ollama_chat_via_openai(
     let upstream = backend
         .forward_post_raw("/v1/chat/completions", body)
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Failed to reach LLM backend: {e}")))?;
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to reach LLM backend: {e}"),
+            )
+        })?;
 
     let status = upstream.status();
     let ct = upstream
@@ -1242,10 +1264,7 @@ async fn forward_ollama_chat_via_openai(
     }
 
     if !stream {
-        let json: serde_json::Value = upstream
-            .json()
-            .await
-            .unwrap_or(serde_json::json!({}));
+        let json: serde_json::Value = upstream.json().await.unwrap_or(serde_json::json!({}));
         let content = json
             .get("choices")
             .and_then(|c| c.as_array())
@@ -1337,7 +1356,11 @@ async fn generate(
 ) -> Result<Response, (StatusCode, String)> {
     let model = serde_json::from_str::<serde_json::Value>(&body)
         .ok()
-        .and_then(|json| json.get("model").and_then(|m| m.as_str()).map(str::to_string));
+        .and_then(|json| {
+            json.get("model")
+                .and_then(|m| m.as_str())
+                .map(str::to_string)
+        });
 
     if !state.setup_complete.load(Ordering::Relaxed) {
         return Err((
@@ -1413,7 +1436,11 @@ async fn embed(
 ) -> Result<Response, (StatusCode, String)> {
     let model = serde_json::from_str::<serde_json::Value>(&body)
         .ok()
-        .and_then(|json| json.get("model").and_then(|m| m.as_str()).map(str::to_string));
+        .and_then(|json| {
+            json.get("model")
+                .and_then(|m| m.as_str())
+                .map(str::to_string)
+        });
     let backend = require_backend_for_model(&state, model.as_deref()).await?;
     if !backend.supports_ollama_native() {
         return Err(not_ollama_backend());
@@ -1427,7 +1454,11 @@ async fn embeddings(
 ) -> Result<Response, (StatusCode, String)> {
     let model = serde_json::from_str::<serde_json::Value>(&body)
         .ok()
-        .and_then(|json| json.get("model").and_then(|m| m.as_str()).map(str::to_string));
+        .and_then(|json| {
+            json.get("model")
+                .and_then(|m| m.as_str())
+                .map(str::to_string)
+        });
     let backend = require_backend_for_model(&state, model.as_deref()).await?;
     let path = if backend.supports_ollama_native() {
         "/api/embeddings"
@@ -1443,7 +1474,11 @@ async fn v1_embeddings(
 ) -> Result<Response, (StatusCode, String)> {
     let model = serde_json::from_str::<serde_json::Value>(&body)
         .ok()
-        .and_then(|json| json.get("model").and_then(|m| m.as_str()).map(str::to_string));
+        .and_then(|json| {
+            json.get("model")
+                .and_then(|m| m.as_str())
+                .map(str::to_string)
+        });
     forward_local_json(&state, "/v1/embeddings", body, model.as_deref()).await
 }
 
@@ -1472,7 +1507,11 @@ async fn push_model(
 ) -> Result<Response, (StatusCode, String)> {
     let model = serde_json::from_str::<serde_json::Value>(&body)
         .ok()
-        .and_then(|json| json.get("name").and_then(|m| m.as_str()).map(str::to_string));
+        .and_then(|json| {
+            json.get("name")
+                .and_then(|m| m.as_str())
+                .map(str::to_string)
+        });
     let backend = require_backend_for_model(&state, model.as_deref()).await?;
     if !backend.supports_ollama_native() {
         return Err(not_ollama_backend());
@@ -1486,7 +1525,11 @@ async fn create_model(
 ) -> Result<Response, (StatusCode, String)> {
     let model = serde_json::from_str::<serde_json::Value>(&body)
         .ok()
-        .and_then(|json| json.get("name").and_then(|m| m.as_str()).map(str::to_string));
+        .and_then(|json| {
+            json.get("name")
+                .and_then(|m| m.as_str())
+                .map(str::to_string)
+        });
     let backend = require_backend_for_model(&state, model.as_deref()).await?;
     if !backend.supports_ollama_native() {
         return Err(not_ollama_backend());
@@ -1539,7 +1582,8 @@ async fn show_model_info(
     body: String,
 ) -> Result<Response, (StatusCode, String)> {
     let body_json: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::json!({}));
-    let requested_model = body_json.get("name")
+    let requested_model = body_json
+        .get("name")
         .or_else(|| body_json.get("model"))
         .and_then(|n| n.as_str())
         .unwrap_or("");
@@ -1548,9 +1592,10 @@ async fn show_model_info(
     let is_remote = {
         let st = state.shared_state.lock().await;
         !st.local_models.contains(&requested_model.to_string())
-            && st.network_models.iter().any(|m| {
-                m.get("name").and_then(|n| n.as_str()) == Some(requested_model)
-            })
+            && st
+                .network_models
+                .iter()
+                .any(|m| m.get("name").and_then(|n| n.as_str()) == Some(requested_model))
     };
 
     if is_remote {
@@ -1569,7 +1614,10 @@ async fn show_model_info(
                 .cloned()
                 .unwrap_or_else(|| crate::network_catalog::network_model_show_info(&network_model));
             if let Some(details) = show_info.get_mut("details").and_then(|d| d.as_object_mut()) {
-                details.insert("format".to_string(), serde_json::Value::String("remote".to_string()));
+                details.insert(
+                    "format".to_string(),
+                    serde_json::Value::String("remote".to_string()),
+                );
             }
 
             let bytes = serde_json::to_vec(&show_info).unwrap_or_default();
@@ -1600,9 +1648,11 @@ async fn show_model_info(
         forward_local_json(&state, "/api/show", body, Some(requested_model)).await
     } else {
         let st = state.shared_state.lock().await;
-        if let Some(model) = st.local_models_full.iter().find(|m| {
-            m.get("name").and_then(|n| n.as_str()) == Some(requested_model)
-        }) {
+        if let Some(model) = st
+            .local_models_full
+            .iter()
+            .find(|m| m.get("name").and_then(|n| n.as_str()) == Some(requested_model))
+        {
             let bytes = serde_json::to_vec(model).unwrap_or_default();
             Ok(Response::builder()
                 .status(StatusCode::OK)
@@ -1719,14 +1769,15 @@ async fn v1_models(State(state): State<ProxyState>) -> Result<Response, (StatusC
                 for network_model in &st.network_models {
                     if let Some(name) = network_model.get("name").and_then(|n| n.as_str()) {
                         if !local_names.contains(name) {
-                            let owned_by = crate::network_catalog::network_scope_label(network_model)
-                                .map(|scope| match scope {
-                                    "swarm" => "swarm",
-                                    "cluster" => "cluster",
-                                    "both" => "network",
-                                    _ => "community",
-                                })
-                                .unwrap_or("community");
+                            let owned_by =
+                                crate::network_catalog::network_scope_label(network_model)
+                                    .map(|scope| match scope {
+                                        "swarm" => "swarm",
+                                        "cluster" => "cluster",
+                                        "both" => "network",
+                                        _ => "community",
+                                    })
+                                    .unwrap_or("community");
                             let mut remote_model = serde_json::json!({
                                 "id": name,
                                 "name": name,

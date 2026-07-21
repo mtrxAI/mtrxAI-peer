@@ -1,6 +1,6 @@
 use crate::client_config::{cluster_accepts_jobs, cluster_is_connected, ClusterMembership};
-use crate::network_scheduler::cluster_schedule_fields;
 use crate::network_catalog::sync_unified_network_models;
+use crate::network_scheduler::cluster_schedule_fields;
 use crate::shared::{
     ClusterStatus, ConnectionAction, ModelStartAction, PeerConnectionView, PeerDirection,
     PeerModerationAction, PeerRegistry, ProxyRequestCommand, SharedState,
@@ -143,7 +143,9 @@ impl ClusterManager {
             }
         }
         for cluster in desired {
-            if cluster_is_connected(&cluster) && !self.cluster_handles.contains_key(&cluster.cluster_id) {
+            if cluster_is_connected(&cluster)
+                && !self.cluster_handles.contains_key(&cluster.cluster_id)
+            {
                 if let Err(e) = self.spawn_cluster(&cluster).await {
                     eprintln!("Failed to spawn cluster {}: {}", cluster.cluster_id, e);
                 }
@@ -236,7 +238,8 @@ impl ClusterManager {
                 eprintln!("WebRTCManager error (cluster {cluster_id}): {e}");
             }
         });
-        self.cluster_handles.insert(cluster.cluster_id.clone(), handle);
+        self.cluster_handles
+            .insert(cluster.cluster_id.clone(), handle);
         Ok(())
     }
 
@@ -265,10 +268,7 @@ impl ClusterManager {
                 None => {
                     let _ = cmd
                         .response_tx
-                        .send(Err(format!(
-                            "No cluster advertises model {}",
-                            cmd.model
-                        )))
+                        .send(Err(format!("No cluster advertises model {}", cmd.model)))
                         .await;
                     return;
                 }
@@ -302,10 +302,7 @@ impl ClusterManager {
             PeerModerationAction::Report { peer_id, reason } => {
                 if let Some(tx) = self.cluster_moderation_txs.values().next() {
                     let _ = tx
-                        .send(PeerModerationAction::Report {
-                            peer_id,
-                            reason,
-                        })
+                        .send(PeerModerationAction::Report { peer_id, reason })
                         .await;
                 }
             }
@@ -421,10 +418,7 @@ async fn find_cluster_for_model(
             if m.get("name").and_then(|n| n.as_str()) != Some(model) {
                 continue;
             }
-            let count = m
-                .get("_peer_count")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(1);
+            let count = m.get("_peer_count").and_then(|v| v.as_u64()).unwrap_or(1);
             match &best {
                 Some((_, best_count)) if *best_count >= count => {}
                 _ => best = Some((cluster_id.clone(), count)),
@@ -468,26 +462,33 @@ pub async fn sync_peer_connections(
     peer_stats: &crate::peer_stats::PeerStatsTrackerHandle,
     lifetime_totals: &std::collections::HashMap<String, u64>,
 ) {
-    let peer_rows: Vec<(String, Option<String>, Option<String>, String, u64, bool, u64)> =
-        peer_registry
-            .lock()
-            .await
-            .values()
-            .map(|p| {
-                (
-                    p.peer_id.clone(),
-                    p.cluster_id.clone(),
-                    p.swarm_id.clone(),
-                    match p.direction {
-                        PeerDirection::Inbound => "inbound".to_string(),
-                        PeerDirection::Outbound => "outbound".to_string(),
-                    },
-                    p.connected_at.elapsed().as_secs(),
-                    p.data_channel_open,
-                    p.attestation_flags,
-                )
-            })
-            .collect();
+    let peer_rows: Vec<(
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+        u64,
+        bool,
+        u64,
+    )> = peer_registry
+        .lock()
+        .await
+        .values()
+        .map(|p| {
+            (
+                p.peer_id.clone(),
+                p.cluster_id.clone(),
+                p.swarm_id.clone(),
+                match p.direction {
+                    PeerDirection::Inbound => "inbound".to_string(),
+                    PeerDirection::Outbound => "outbound".to_string(),
+                },
+                p.connected_at.elapsed().as_secs(),
+                p.data_channel_open,
+                p.attestation_flags,
+            )
+        })
+        .collect();
 
     let views: Vec<PeerConnectionView> = {
         let stats_guard = peer_stats.lock().ok();
@@ -503,23 +504,21 @@ pub async fn sync_peer_connections(
                     data_channel_open,
                     attestation_flags,
                 )| {
-                let lifetime = lifetime_totals.get(&peer_id).copied().unwrap_or(0);
-                let stats = stats_guard
-                    .as_ref()
-                    .map(|g| g.snapshot(&peer_id, lifetime));
-                let blocked = blocked_peers.contains(&peer_id);
-                PeerConnectionView {
-                    peer_id,
-                    cluster_id,
-                    swarm_id,
-                    direction,
-                    since_secs,
-                    data_channel_open,
-                    blocked,
-                    attestation_flags,
-                    stats,
-                }
-            },
+                    let lifetime = lifetime_totals.get(&peer_id).copied().unwrap_or(0);
+                    let stats = stats_guard.as_ref().map(|g| g.snapshot(&peer_id, lifetime));
+                    let blocked = blocked_peers.contains(&peer_id);
+                    PeerConnectionView {
+                        peer_id,
+                        cluster_id,
+                        swarm_id,
+                        direction,
+                        since_secs,
+                        data_channel_open,
+                        blocked,
+                        attestation_flags,
+                        stats,
+                    }
+                },
             )
             .collect()
     };

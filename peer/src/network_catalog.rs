@@ -204,11 +204,7 @@ pub async fn sync_unified_network_models(
                 .max_by_key(|s| s.get("peer_count").and_then(|v| v.as_u64()).unwrap_or(0))
                 .and_then(|s| s.get("swarm_id").cloned());
 
-            let mut obj = agg
-                .template
-                .as_object()
-                .cloned()
-                .unwrap_or_default();
+            let mut obj = agg.template.as_object().cloned().unwrap_or_default();
             obj.insert("name".to_string(), json!(name));
             obj.insert("_peer".to_string(), representative);
             obj.insert("_peers".to_string(), json!(peers));

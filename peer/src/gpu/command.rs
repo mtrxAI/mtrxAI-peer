@@ -200,7 +200,9 @@ mod tests {
             let path = expand_path_env(r"%SystemRoot%\System32\nvidia-smi.exe");
             let s = path.to_string_lossy();
             assert!(!s.contains("%SystemRoot%"));
-            assert!(s.ends_with(r"System32\nvidia-smi.exe") || s.ends_with("System32/nvidia-smi.exe"));
+            assert!(
+                s.ends_with(r"System32\nvidia-smi.exe") || s.ends_with("System32/nvidia-smi.exe")
+            );
         }
         #[cfg(not(windows))]
         {

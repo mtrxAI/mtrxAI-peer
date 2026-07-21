@@ -105,7 +105,8 @@ async fn run_inference_cell_task(
     )
     .await;
 
-    let cell_job_id = start_pull(&client, &base_url, admin_token.as_deref(), hf_repo, quant).await?;
+    let cell_job_id =
+        start_pull(&client, &base_url, admin_token.as_deref(), hf_repo, quant).await?;
 
     poll_pull_job(
         shared_state,
@@ -176,11 +177,7 @@ async fn resolve_inference_cell_server(
 
     let admin_token = proxy_state
         .tx_store
-        .get_server_admin_token(
-            server_id,
-            cfg.peer_id.as_deref(),
-            cfg.service_id.as_deref(),
-        )
+        .get_server_admin_token(server_id, cfg.peer_id.as_deref(), cfg.service_id.as_deref())
         .await?;
 
     Ok((entry.url.trim_end_matches('/').to_string(), admin_token))
@@ -226,7 +223,10 @@ async fn poll_pull_job(
     display_name: &str,
     cell_job_id: &str,
 ) -> Result<()> {
-    let url = format!("{base_url}{}", mtrxai_icell_api::paths::pull_job(cell_job_id));
+    let url = format!(
+        "{base_url}{}",
+        mtrxai_icell_api::paths::pull_job(cell_job_id)
+    );
     loop {
         let mut req = client.get(&url);
         if let Some(token) = admin_token.filter(|t| !t.is_empty()) {
@@ -235,7 +235,9 @@ async fn poll_pull_job(
 
         let resp = req.send().await.context("poll inference-cell pull job")?;
         if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(anyhow!("inference-cell rejected pull status: admin token required"));
+            return Err(anyhow!(
+                "inference-cell rejected pull status: admin token required"
+            ));
         }
         if !resp.status().is_success() {
             let text = resp.text().await.unwrap_or_default();
@@ -279,11 +281,9 @@ async fn poll_pull_job(
             }
             JobStatus::Ok => return Ok(()),
             JobStatus::Failed => {
-                return Err(anyhow!(
-                    status
-                        .error
-                        .unwrap_or_else(|| "inference-cell pull failed".to_string())
-                ));
+                return Err(anyhow!(status
+                    .error
+                    .unwrap_or_else(|| "inference-cell pull failed".to_string())));
             }
         }
 

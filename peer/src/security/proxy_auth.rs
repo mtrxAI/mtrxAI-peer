@@ -27,11 +27,7 @@ pub fn build_proxy_auth(p2p_token: &str, peer_id: &str) -> ProxyAuthProof {
     }
 }
 
-pub fn verify_proxy_auth(
-    proof: &ProxyAuthProof,
-    p2p_token: &str,
-    expected_peer_id: &str,
-) -> bool {
+pub fn verify_proxy_auth(proof: &ProxyAuthProof, p2p_token: &str, expected_peer_id: &str) -> bool {
     if proof.peer_id != expected_peer_id {
         return false;
     }
@@ -47,8 +43,8 @@ pub fn verify_proxy_auth(
 }
 
 fn compute_mac(p2p_token: &str, peer_id: &str, timestamp: u64) -> String {
-    let mut mac = HmacSha256::new_from_slice(p2p_token.as_bytes())
-        .expect("HMAC accepts any key size");
+    let mut mac =
+        HmacSha256::new_from_slice(p2p_token.as_bytes()).expect("HMAC accepts any key size");
     mac.update(b"mtrxai-proxy-auth-v1");
     mac.update(peer_id.as_bytes());
     mac.update(&timestamp.to_le_bytes());
