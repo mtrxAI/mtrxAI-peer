@@ -38,7 +38,7 @@ jobs:
       client_image: ${{ steps.meta.outputs.client_image }}
     steps:
       - name: Checkout peer
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: mtrxAI-peer
 
@@ -87,12 +87,12 @@ jobs:
       MTRXAI_BUILD_PLATFORM: ${{ matrix.platform }}
     steps:
       - name: Checkout peer
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: mtrxAI-peer
 
       - name: Checkout common
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
           path: mtrxAI-common
@@ -256,12 +256,12 @@ jobs:
       MTRXAI_BUILD_PLATFORM: ${{ matrix.platform }}
     steps:
       - name: Checkout peer
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: mtrxAI-peer
 
       - name: Checkout common
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
           path: mtrxAI-common

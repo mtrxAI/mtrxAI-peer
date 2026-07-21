@@ -36,12 +36,12 @@ jobs:
         working-directory: mtrxAI-peer
     steps:
       - name: Checkout peer
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: mtrxAI-peer
 
       - name: Checkout common
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
           path: mtrxAI-common
@@ -88,12 +88,12 @@ jobs:
           - tx_db
     steps:
       - name: Checkout peer
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: mtrxAI-peer
 
       - name: Checkout common
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
           path: mtrxAI-common
