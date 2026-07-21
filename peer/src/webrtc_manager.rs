@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use uuid::Uuid;
 use webrtc::api::APIBuilder;
 use webrtc::data_channel::data_channel_state::RTCDataChannelState;
 use webrtc::data_channel::RTCDataChannel;
@@ -14,11 +15,13 @@ use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use webrtc::peer_connection::RTCPeerConnection;
 
+pub use mtrxai_protocol::ProtocolMessage;
+
 use crate::client_config::{cluster_accepts_jobs, cluster_is_connected, find_cluster};
 use crate::network_scheduler::cluster_schedule_fields;
 use crate::connect_allowance::ConnectionAllowanceStore;
 use crate::shared::{
-    peer_registry_key, ClusterStatus, ConnectionAction, GpuHostStatus, IncomingConnectionOfferState,
+    peer_registry_key, ClusterStatus, ConnectionAction, IncomingConnectionOfferState,
     ModelStartAction, ModelStartOfferState, ModelStartRequestState, PeerDirection, PeerInfo,
     PeerModerationAction, PeerRegistry, ProxyRequestCommand, SharedState, TrackedPeer,
 };
@@ -162,150 +165,6 @@ fn peer_connection_allowed(allow_unattested_peers: bool, peer_flags: u64) -> boo
         return true;
     }
     (peer_flags & mtrxai_attestation::ATTESTATION_MTRXAI_BUILD) != 0
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum ProtocolMessage {
-    Registered {
-        name: String,
-        #[serde(rename = "cluster_id", alias = "room_id")]
-        cluster_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none", rename = "cluster_name", alias = "room_name")]
-        cluster_name: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        required_attestation_flags: Option<u64>,
-    },
-    UpdatePeerInfo {
-        lat: f64,
-        lon: f64,
-        asn: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        city: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        country: Option<String>,
-    },
-    UpdateModels {
-        models: Vec<serde_json::Value>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        gpu_host: Option<GpuHostStatus>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        accepting_jobs: Option<bool>,
-    },
-    AvailableModels {
-        models: Vec<serde_json::Value>,
-    },
-    GetPeersForModel {
-        req_id: String,
-        model: String,
-    },
-    PeersForModel {
-        req_id: String,
-        model: String,
-        peers: Vec<String>,
-    },
-    RequestPeerConnect {
-        req_id: String,
-        model: String,
-    },
-    ConnectOffer {
-        req_id: String,
-        model: String,
-        requested_by: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        requested_by_attestation_flags: Option<u64>,
-    },
-    RespondConnectOffer {
-        req_id: String,
-        accept: bool,
-    },
-    ConnectUpdate {
-        req_id: String,
-        model: String,
-        status: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_peer: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        message: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_attestation_flags: Option<u64>,
-    },
-    Route {
-        to: String,
-        from: String,
-        payload: serde_json::Value,
-    },
-    ReportTokenUsage {
-        req_id: String,
-        role: String,
-        peer_id: String,
-        remote_peer_id: String,
-        model: String,
-        path: String,
-        prompt_tokens: u32,
-        completion_tokens: u32,
-        total_tokens: u32,
-        bytes_sent: u64,
-        bytes_received: u64,
-        duration_ms: u64,
-    },
-    RequestModelStart {
-        req_id: String,
-        model: String,
-        #[serde(rename = "cluster_id", alias = "room_id")]
-        cluster_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        gpu_host: Option<GpuHostStatus>,
-    },
-    ModelStartUpdate {
-        req_id: String,
-        model: String,
-        status: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        progress_pct: Option<u8>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_peer: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        peers: Option<Vec<String>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        message: Option<String>,
-    },
-    ModelStartOffer {
-        req_id: String,
-        model: String,
-        requested_by: String,
-        estimated_vram_mb: u64,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        disk_size_mb: Option<u64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        run_on_requester: Option<bool>,
-    },
-    RespondModelStart {
-        req_id: String,
-        accept: bool,
-    },
-    ReportModelStartProgress {
-        req_id: String,
-        status: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        progress_pct: Option<u8>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        message: Option<String>,
-    },
-    ReportPeer {
-        target_peer_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        reason: Option<String>,
-    },
-    PeerReportAck {
-        target_peer_id: String,
-        report_count: u32,
-        banned: bool,
-    },
-    PeerBanned {
-        peer_id: String,
-        report_count: u32,
-    },
 }
 
 /// Messages sent over the WebRTC data channel for remote LLM chat protocol
@@ -940,6 +799,8 @@ impl WebRTCManager {
             )
         };
 
+        // Soft rebuild: unreachable attached servers are skipped so one dead
+        // backend cannot block advertising models from healthy siblings.
         let snapshot = self
             .proxy_state
             .llm_registry
@@ -1187,7 +1048,7 @@ impl WebRTCManager {
                 self.send_protocol_message(&ProtocolMessage::RequestModelStart {
                     req_id: req_id.clone(),
                     model: model.clone(),
-                    cluster_id: self.cluster_id.clone(),
+                    cluster_id: Uuid::parse_str(&self.cluster_id).unwrap_or_default(),
                     gpu_host,
                 })
                 .await?;
@@ -1735,6 +1596,7 @@ impl WebRTCManager {
                 cluster_name,
                 required_attestation_flags,
             } => {
+                let cluster_id = cluster_id.to_string();
                 println!(
                     "Successfully registered on server as {} (cluster: {})",
                     name, cluster_id

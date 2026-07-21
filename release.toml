@@ -1,6 +1,6 @@
 # Canonical release version for peer container and desktop builds.
 # CI reads this file (or a v* git tag) and syncs package manifests before building.
-version = "0.1.5"
+version = "0.2.1"
 
 [docker]
 registry = "docker.io/mtrxai"

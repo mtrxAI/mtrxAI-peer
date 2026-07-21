@@ -10,6 +10,7 @@ pub use openai_compat::OpenAiCompatBackend;
 use crate::client_config::{is_custom_server_kind, is_inference_cell_kind, LlmServerEntry};
 use crate::ollama_client::{build_model_catalog, gpu_probe_mode, GpuProbeMode, ModelCatalogSnapshot};
 use anyhow::{anyhow, Result};
+use mtrxai_icell_api::{CellInfo, INFO_PATH};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -338,11 +339,6 @@ pub fn parse_kind(s: &str) -> LlmBackendKind {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct InferenceCellInfo {
-    engine: String,
-}
-
 /// Returns the icell engine (`llamacpp` or `ollama`) when the server responds to `/mtrxai/v1/info`,
 /// or by probing inference routes when the admin info endpoint is unavailable.
 pub async fn probe_inference_cell_engine(
@@ -351,10 +347,10 @@ pub async fn probe_inference_cell_engine(
 ) -> Result<Option<String>> {
     let base = base_url.trim_end_matches('/');
 
-    let info_url = format!("{base}/mtrxai/v1/info");
+    let info_url = format!("{base}{INFO_PATH}");
     if let Ok(resp) = client.get(&info_url).send().await {
         if resp.status().is_success() {
-            if let Ok(info) = resp.json::<InferenceCellInfo>().await {
+            if let Ok(info) = resp.json::<CellInfo>().await {
                 return Ok(Some(info.engine));
             }
         }
@@ -439,7 +435,7 @@ mod tests {
     #[test]
     fn parses_inference_cell_info_json() {
         let raw = r#"{"engine":"ollama","inference_api":"ollama","admin_api":"mtrxai/v1","version":"0.1.0"}"#;
-        let info: InferenceCellInfo = serde_json::from_str(raw).unwrap();
+        let info: CellInfo = serde_json::from_str(raw).unwrap();
         assert_eq!(info.engine, "ollama");
     }
 }

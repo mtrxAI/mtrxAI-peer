@@ -2,6 +2,7 @@ mod aggregate;
 mod amd;
 mod apple;
 mod command;
+mod intel;
 mod nvidia;
 mod ollama;
 mod registry;
@@ -10,6 +11,7 @@ mod util;
 pub use aggregate::{aggregate_gpu_devices, merge_vendor_statuses};
 pub use amd::{probe_amd_smi, probe_rocm_smi};
 pub use apple::probe_apple;
+pub use intel::{probe_intel_gpu_top, probe_xpu_smi};
 pub use nvidia::probe_nvidia_smi;
 pub use ollama::{parse_gpu_from_ollama_info, probe_gpu_via_ollama};
 pub use registry::gpu_probe_registry;
@@ -39,30 +41,46 @@ pub fn gpu_probe_mode() -> GpuProbeMode {
 }
 
 pub fn probe_gpu_nvidia_smi() -> Option<GpuHostStatus> {
-    probe_nvidia_smi()
+    let reg = gpu_probe_registry();
+    reg.nvidia_smi
+        .as_ref()
+        .and_then(|path| probe_nvidia_smi(path))
 }
 
 fn probe_native_vendors() -> Option<GpuHostStatus> {
     let reg = gpu_probe_registry();
     let mut results = Vec::new();
 
-    if reg.nvidia_smi {
-        if let Some(gpu) = probe_nvidia_smi() {
+    if let Some(path) = reg.nvidia_smi.as_ref() {
+        if let Some(gpu) = probe_nvidia_smi(path) {
             results.push(gpu);
         }
     }
-    if reg.amd_smi {
-        if let Some(gpu) = probe_amd_smi() {
+    if let Some(path) = reg.amd_smi.as_ref() {
+        if let Some(gpu) = probe_amd_smi(path) {
             results.push(gpu);
         }
-    } else if reg.rocm_smi {
-        if let Some(gpu) = probe_rocm_smi() {
+    } else if let Some(path) = reg.rocm_smi.as_ref() {
+        if let Some(gpu) = probe_rocm_smi(path) {
+            results.push(gpu);
+        }
+    }
+    if let Some(path) = reg.xpu_smi.as_ref() {
+        if let Some(gpu) = probe_xpu_smi(path) {
+            results.push(gpu);
+        }
+    } else if let Some(path) = reg.intel_gpu_top.as_ref() {
+        if let Some(gpu) = probe_intel_gpu_top(path) {
             results.push(gpu);
         }
     }
     if reg.apple {
-        if let Some(gpu) = probe_apple() {
-            results.push(gpu);
+        if let (Some(ioreg), Some(sysctl)) =
+            (reg.apple_ioreg.as_ref(), reg.apple_sysctl.as_ref())
+        {
+            if let Some(gpu) = probe_apple(ioreg, sysctl) {
+                results.push(gpu);
+            }
         }
     }
 

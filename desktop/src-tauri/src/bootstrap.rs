@@ -23,17 +23,38 @@ impl BootstrapState {
     }
 }
 
+fn is_production_lobby(lobby_host: &str) -> bool {
+    let host = lobby_host.split(':').next().unwrap_or(lobby_host);
+    host.eq_ignore_ascii_case("api.mtrxai.net") || lobby_host.ends_with(":443")
+}
+
+/// Default attestation skip: preserve an existing env value; otherwise skip for
+/// local/dev lobbies (matches container compose) and require attestation for prod.
+fn default_attestation_skip(lobby_host: &str) -> &'static str {
+    if std::env::var_os("MTRXAI_ATTESTATION_SKIP").is_some() {
+        return "";
+    }
+    if is_production_lobby(lobby_host) {
+        "0"
+    } else {
+        "1"
+    }
+}
+
 pub fn apply_client_env(app: &AppHandle, lobby_host: &str, proxy_port: u16) -> Result<()> {
     let config_path = settings::client_config_path(app)?;
     let lobby_host = settings::normalize_lobby_host(lobby_host)?;
     let lobby_tls = lobby_host.ends_with(":443");
+    let attestation_skip = default_attestation_skip(&lobby_host);
 
     // SAFETY: called on the main/setup path before spawning the client task.
     unsafe {
         std::env::set_var("MTRXAI_LOBBY_HOST", &lobby_host);
         std::env::set_var("MTRXAI_PROXY_PORT", proxy_port.to_string());
         std::env::set_var("MTRXAI_CONFIG_PATH", config_path.to_string_lossy().as_ref());
-        std::env::set_var("MTRXAI_ATTESTATION_SKIP", "0");
+        if !attestation_skip.is_empty() {
+            std::env::set_var("MTRXAI_ATTESTATION_SKIP", attestation_skip);
+        }
         if lobby_tls {
             std::env::set_var("MTRXAI_LOBBY_TLS", "1");
         }

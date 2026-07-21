@@ -4,6 +4,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use mtrxai_auth::verify_bearer_token;
 
 pub fn local_proxy_token() -> Option<String> {
     std::env::var("MTRXAI_PROXY_TOKEN")
@@ -20,15 +21,7 @@ pub fn verify_local_proxy_auth(header_value: Option<&str>) -> bool {
     let Some(expected) = local_proxy_token() else {
         return true;
     };
-    let Some(raw) = header_value else {
-        return false;
-    };
-    let token = raw
-        .strip_prefix("Bearer ")
-        .or_else(|| raw.strip_prefix("bearer "))
-        .unwrap_or(raw)
-        .trim();
-    constant_time_eq(token, &expected)
+    verify_bearer_token(header_value, &expected)
 }
 
 pub async fn local_proxy_auth_middleware(
@@ -39,7 +32,7 @@ pub async fn local_proxy_auth_middleware(
         return Ok(next.run(req).await);
     }
     let path = req.uri().path();
-    if path == "/health" || path.starts_with("/api/client") {
+    if path == "/health" || path.starts_with("/api/client") || path.starts_with("/api/peer") {
         return Ok(next.run(req).await);
     }
     let auth = req
@@ -51,14 +44,4 @@ pub async fn local_proxy_auth_middleware(
     } else {
         Err(StatusCode::UNAUTHORIZED)
     }
-}
-
-fn constant_time_eq(a: &str, b: &str) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    a.bytes()
-        .zip(b.bytes())
-        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
-        == 0
 }

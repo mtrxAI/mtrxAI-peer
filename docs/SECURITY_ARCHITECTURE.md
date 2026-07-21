@@ -563,10 +563,10 @@ Deploy under `mtrxAI-infra/deploy/secure/client-icell/`:
 
 | Service | Role |
 |---------|------|
-| `mtrxai-client` | Single hardened peer — lobby, P2P (swarm/cluster), optional HTTP proxy; decrypts app-layer E2EE and forwards to icell |
+| `mtrxai-peer` | Single hardened peer — lobby, P2P (swarm/cluster), optional HTTP proxy; decrypts app-layer E2EE and forwards to icell |
 | `icell` | Sealed inference cell — loopback-only engine; `:8443` not published to host |
 
-**Flow:** remote consumer peer → P2P E2EE → provider `mtrxai-client` → HTTPS (internal) → `icell`.
+**Flow:** remote consumer peer → P2P E2EE → provider `mtrxai-peer` → HTTPS (internal) → `icell`.
 
 This matches the dev `peer1` + `inference-cell` pattern, with container hardening, seccomp, E2EE defaults, and log redaction applied to the client image (`client/Dockerfile.vault`).
 

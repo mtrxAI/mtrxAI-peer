@@ -1,10 +1,13 @@
 # Build from mtrxAI-org root (sibling of mtrxAI-peer/ and mtrxAI-common/):
 #   docker build -f mtrxAI-peer/Dockerfile -t mtrxai/mtrx-peer .
-FROM rust:1.88 AS builder
+FROM rust:1.89-bookworm AS builder
 
 WORKDIR /usr/src/mtrxai
 
 COPY mtrxAI-common/mtrxai-attestation ./mtrxAI-common/mtrxai-attestation
+COPY mtrxAI-common/mtrxai-protocol ./mtrxAI-common/mtrxai-protocol
+COPY mtrxAI-common/mtrxai-icell-api ./mtrxAI-common/mtrxai-icell-api
+COPY mtrxAI-common/mtrxai-auth ./mtrxAI-common/mtrxai-auth
 COPY mtrxAI-peer/Cargo.toml mtrxAI-peer/Cargo.lock ./mtrxAI-peer/
 COPY mtrxAI-peer/peer ./mtrxAI-peer/peer
 COPY mtrxAI-peer/peer-tests ./mtrxAI-peer/peer-tests

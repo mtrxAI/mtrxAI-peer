@@ -45,6 +45,7 @@ jobs:
         with:
           repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
           path: mtrxAI-common
+          ref: ${{ vars.MTRXAI_COMMON_REF || 'main' }}
           token: ${{ secrets.MTRXAI_COMMON_READ_TOKEN || github.token }}
 
       - uses: dtolnay/rust-toolchain@stable
@@ -96,6 +97,7 @@ jobs:
         with:
           repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
           path: mtrxAI-common
+          ref: ${{ vars.MTRXAI_COMMON_REF || 'main' }}
           token: ${{ secrets.MTRXAI_COMMON_READ_TOKEN || github.token }}
 
       - uses: dtolnay/rust-toolchain@stable
