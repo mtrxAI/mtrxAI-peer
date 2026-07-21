@@ -1,7 +1,7 @@
 use crate::gpu::aggregate::aggregate_gpu_devices;
 use crate::gpu::command::run_command;
 use crate::gpu::util::{
-    amd_architecture_label, parse_optional_u8, parse_optional_u32, pct_from_used_total,
+    amd_architecture_label, parse_optional_u32, parse_optional_u8, pct_from_used_total,
 };
 use crate::shared::{GpuDeviceInfo, GpuHostStatus};
 use serde_json::Value;
@@ -49,7 +49,10 @@ fn parse_amd_smi_json(static_body: &Value, metric_body: &Value) -> Option<GpuHos
             .get("gpu")
             .or_else(|| gpu.get("gpu_id"))
             .or_else(|| gpu.get("id"))
-            .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .and_then(|v| {
+                v.as_u64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
             .unwrap_or(idx as u64);
 
         let metric = metric_entries.and_then(|entries| {
@@ -57,7 +60,10 @@ fn parse_amd_smi_json(static_body: &Value, metric_body: &Value) -> Option<GpuHos
                 m.get("gpu")
                     .or_else(|| m.get("gpu_id"))
                     .or_else(|| m.get("id"))
-                    .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+                    .and_then(|v| {
+                        v.as_u64()
+                            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                    })
                     == Some(gpu_id)
             })
         });
@@ -80,7 +86,10 @@ fn parse_amd_smi_json(static_body: &Value, metric_body: &Value) -> Option<GpuHos
             .pointer("/memory/total/vram")
             .or_else(|| gpu.pointer("/vram/total"))
             .or_else(|| gpu.get("vram_total"))
-            .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .and_then(|v| {
+                v.as_u64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
             .map(|b| if b > 1_000_000 { b / (1024 * 1024) } else { b })
             .unwrap_or(0);
 
@@ -89,7 +98,10 @@ fn parse_amd_smi_json(static_body: &Value, metric_body: &Value) -> Option<GpuHos
                 m.pointer("/memory/used/vram")
                     .or_else(|| m.pointer("/vram/used"))
                     .or_else(|| m.get("vram_used"))
-                    .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+                    .and_then(|v| {
+                        v.as_u64()
+                            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                    })
             })
             .map(|b| if b > 1_000_000 { b / (1024 * 1024) } else { b })
             .unwrap_or(0);
@@ -99,7 +111,10 @@ fn parse_amd_smi_json(static_body: &Value, metric_body: &Value) -> Option<GpuHos
                 m.pointer("/utilization/gfx")
                     .or_else(|| m.get("gpu_utilization"))
                     .or_else(|| m.get("gfx_activity"))
-                    .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+                    .and_then(|v| {
+                        v.as_u64()
+                            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                    })
             })
             .unwrap_or(0)
             .min(100) as u8;
@@ -109,7 +124,10 @@ fn parse_amd_smi_json(static_body: &Value, metric_body: &Value) -> Option<GpuHos
                 m.pointer("/temperature/hotspot")
                     .or_else(|| m.pointer("/temperature/edge"))
                     .or_else(|| m.get("temperature"))
-                    .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+                    .and_then(|v| {
+                        v.as_u64()
+                            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                    })
             })
             .map(|t| t.min(255) as u8);
 
@@ -180,7 +198,11 @@ pub fn probe_rocm_smi(rocm_smi: &Path) -> Option<GpuHostStatus> {
 
 fn parse_rocm_smi_csv(rocm_smi: &Path, text: &str) -> Option<GpuHostStatus> {
     let mut devices = Vec::new();
-    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let lines: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
 
     for (idx, line) in lines.iter().enumerate() {
         if line.starts_with("card,") || line.eq_ignore_ascii_case("card, gpu use (%),") {
@@ -256,7 +278,8 @@ fn enrich_rocm_memory(devices: &mut [GpuDeviceInfo], mem_text: &str) {
             if let Some(dev) = devices.get_mut(idx) {
                 dev.memory_used_mb = used / (1024 * 1024);
                 dev.memory_total_mb = total / (1024 * 1024);
-                dev.memory_utilization_pct = Some(pct_from_used_total(dev.memory_used_mb, dev.memory_total_mb));
+                dev.memory_utilization_pct =
+                    Some(pct_from_used_total(dev.memory_used_mb, dev.memory_total_mb));
             }
         }
     }
@@ -264,7 +287,12 @@ fn enrich_rocm_memory(devices: &mut [GpuDeviceInfo], mem_text: &str) {
 
 fn parse_amd_monitor_csv(text: &str, source: &str) -> Option<GpuHostStatus> {
     let mut devices = Vec::new();
-    for (idx, line) in text.lines().map(str::trim).filter(|l| !l.is_empty()).enumerate() {
+    for (idx, line) in text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .enumerate()
+    {
         if line.starts_with("gpu,") || line.starts_with("GPU,") {
             continue;
         }
@@ -276,8 +304,14 @@ fn parse_amd_monitor_csv(text: &str, source: &str) -> Option<GpuHostStatus> {
         let power = parts.get(1).and_then(|v| parse_optional_u32(v));
         let util = parts.get(2).and_then(|v| parse_optional_u8(v)).unwrap_or(0);
         let temp = parts.get(3).and_then(|v| parse_optional_u8(v));
-        let mem_used = parts.get(4).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-        let vram_total = parts.get(5).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+        let mem_used = parts
+            .get(4)
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0);
+        let vram_total = parts
+            .get(5)
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0);
 
         devices.push(GpuDeviceInfo {
             index: idx.min(u8::MAX as usize) as u8,

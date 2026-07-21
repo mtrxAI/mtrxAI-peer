@@ -1,6 +1,6 @@
 use crate::gpu::aggregate::aggregate_gpu_devices;
 use crate::gpu::command::run_command;
-use crate::gpu::util::{mb_from_bytes, parse_optional_u8, parse_optional_u32, pct_from_used_total};
+use crate::gpu::util::{mb_from_bytes, parse_optional_u32, parse_optional_u8, pct_from_used_total};
 use crate::shared::{GpuDeviceInfo, GpuHostStatus};
 use serde_json::Value;
 use std::path::Path;
@@ -22,7 +22,10 @@ pub fn probe_xpu_smi(xpu_smi: &Path) -> Option<GpuHostStatus> {
             .get("device_id")
             .or_else(|| meta.get("deviceId"))
             .or_else(|| meta.get("id"))
-            .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .and_then(|v| {
+                v.as_u64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
             .unwrap_or(idx as u64);
 
         let name = meta
@@ -34,17 +37,9 @@ pub fn probe_xpu_smi(xpu_smi: &Path) -> Option<GpuHostStatus> {
             .unwrap_or("Intel GPU")
             .to_string();
 
-        let stats = run_command(
-            xpu_smi,
-            &["stats", "-d", &device_id.to_string(), "-j"],
-        )
-        .or_else(|| {
-            run_command(
-                xpu_smi,
-                &["stats", "-d", &device_id.to_string(), "--json"],
-            )
-        })
-        .or_else(|| run_command(xpu_smi, &["stats", "-d", &device_id.to_string()]));
+        let stats = run_command(xpu_smi, &["stats", "-d", &device_id.to_string(), "-j"])
+            .or_else(|| run_command(xpu_smi, &["stats", "-d", &device_id.to_string(), "--json"]))
+            .or_else(|| run_command(xpu_smi, &["stats", "-d", &device_id.to_string()]));
 
         let stats_body = stats
             .and_then(|s| serde_json::from_str::<Value>(&s).ok())
@@ -171,7 +166,9 @@ pub fn parse_intel_gpu_top_json(text: &str) -> Option<GpuHostStatus> {
     } else {
         // Concatenated objects: try first `{...}` block
         let start = trimmed.find('{')?;
-        let end = trimmed[start..].find("}\n").map(|i| start + i + 1)
+        let end = trimmed[start..]
+            .find("}\n")
+            .map(|i| start + i + 1)
             .or_else(|| {
                 let mut depth = 0i32;
                 for (i, c) in trimmed[start..].char_indices() {
@@ -313,7 +310,10 @@ fn average_engine_busy(engines: &Value) -> Option<u8> {
             .and_then(|v| {
                 v.as_f64()
                     .or_else(|| v.as_u64().map(|n| n as f64))
-                    .or_else(|| v.as_str().and_then(|s| s.trim_end_matches('%').parse().ok()))
+                    .or_else(|| {
+                        v.as_str()
+                            .and_then(|s| s.trim_end_matches('%').parse().ok())
+                    })
             });
         if let Some(b) = busy {
             sum += b;

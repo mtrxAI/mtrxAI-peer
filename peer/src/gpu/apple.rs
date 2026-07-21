@@ -92,10 +92,7 @@ fn parse_ioreg_performance(text: &str) -> (u8, u64, u64) {
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn extract_ioreg_number(line: &str) -> Option<u64> {
     let rhs = line.rsplit('=').next()?.trim();
-    let digits: String = rhs
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
+    let digits: String = rhs.chars().take_while(|c| c.is_ascii_digit()).collect();
     if digits.is_empty() {
         None
     } else {

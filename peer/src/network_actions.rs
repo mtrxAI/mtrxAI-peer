@@ -1,6 +1,6 @@
 use crate::client_config::{
-    save_client_config, swarm_accepts_jobs, swarm_is_connected, ClientConfig,
-    cluster_accepts_jobs, cluster_is_connected,
+    cluster_accepts_jobs, cluster_is_connected, save_client_config, swarm_accepts_jobs,
+    swarm_is_connected, ClientConfig,
 };
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -22,8 +22,8 @@ pub fn network_all_paused(cfg: &ClientConfig) -> bool {
         .iter()
         .filter(|s| swarm_is_connected(s))
         .all(|s| !swarm_accepts_jobs(s));
-    let has_connected = cfg.clusters.iter().any(cluster_is_connected)
-        || cfg.swarms.iter().any(swarm_is_connected);
+    let has_connected =
+        cfg.clusters.iter().any(cluster_is_connected) || cfg.swarms.iter().any(swarm_is_connected);
     has_connected && clusters && swarms
 }
 

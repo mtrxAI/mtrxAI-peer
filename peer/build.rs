@@ -13,9 +13,9 @@ fn main() {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "unknown".to_string());
 
-    let build_id = std::env::var("MTRXAI_BUILD_ID").unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
-    let attestation_secret =
-        std::env::var("MTRXAI_ATTESTATION_SECRET").unwrap_or_default();
+    let build_id =
+        std::env::var("MTRXAI_BUILD_ID").unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
+    let attestation_secret = std::env::var("MTRXAI_ATTESTATION_SECRET").unwrap_or_default();
 
     println!("cargo:rustc-env=MTRXAI_GIT_SHA={git_sha}");
     println!("cargo:rustc-env=MTRXAI_BUILD_ID={build_id}");

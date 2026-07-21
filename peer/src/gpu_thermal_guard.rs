@@ -50,11 +50,7 @@ impl GpuThermalGuardTracker {
                 self.over_threshold_since = Some(Instant::now());
                 self.peak_temp_c = Some(temp);
             } else {
-                self.peak_temp_c = Some(
-                    self.peak_temp_c
-                        .map(|p| p.max(temp))
-                        .unwrap_or(temp),
-                );
+                self.peak_temp_c = Some(self.peak_temp_c.map(|p| p.max(temp)).unwrap_or(temp));
             }
             let elapsed = self
                 .over_threshold_since

@@ -1,7 +1,7 @@
+use crate::ollama_client::{catalog_hash, gpu_probe_mode, model_poll_interval_secs, GpuProbeMode};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use crate::ollama_client::{catalog_hash, gpu_probe_mode, model_poll_interval_secs, GpuProbeMode};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
@@ -17,22 +17,23 @@ use webrtc::peer_connection::RTCPeerConnection;
 
 pub use mtrxai_protocol::ProtocolMessage;
 
+use crate::agent_compat::{
+    ensure_ollama_ctx_options_with_default, ensure_ollama_predict_options_with_default,
+    ensure_stream_usage,
+};
 use crate::client_config::{cluster_accepts_jobs, cluster_is_connected, find_cluster};
-use crate::network_scheduler::cluster_schedule_fields;
 use crate::connect_allowance::ConnectionAllowanceStore;
+use crate::network_scheduler::cluster_schedule_fields;
 use crate::shared::{
     peer_registry_key, ClusterStatus, ConnectionAction, IncomingConnectionOfferState,
     ModelStartAction, ModelStartOfferState, ModelStartRequestState, PeerDirection, PeerInfo,
     PeerModerationAction, PeerRegistry, ProxyRequestCommand, SharedState, TrackedPeer,
 };
-use crate::agent_compat::{
-    ensure_ollama_ctx_options_with_default, ensure_ollama_predict_options_with_default,
-    ensure_stream_usage,
-};
 use crate::token_usage::{accumulate_and_parse_usage, parse_usage_from_buffer, TokenUsage};
 
 static NEXT_REQ_ID: AtomicU64 = AtomicU64::new(1);
 const MAINTENANCE_CATALOG_HASH: &str = "__maintenance__";
+const NO_LLM_CATALOG_HASH: &str = "__no_llm__";
 
 /// Conservative wire-size cap (webrtc-rs on_message receive limit is 16 KiB).
 const MAX_DC_WIRE_BYTES: usize = 8 * 1024;
@@ -178,10 +179,7 @@ pub enum DataChannelMessage {
         body: serde_json::Value,
     },
     /// Start of a chunked proxy request (large agent payloads)
-    ProxyRequestStart {
-        req_id: String,
-        path: String,
-    },
+    ProxyRequestStart { req_id: String, path: String },
     /// Chunk of a chunked proxy request body (JSON string fragments)
     ProxyRequestChunk {
         req_id: String,
@@ -189,9 +187,7 @@ pub enum DataChannelMessage {
         chunk: String,
     },
     /// End of a chunked proxy request
-    ProxyRequestEnd {
-        req_id: String,
-    },
+    ProxyRequestEnd { req_id: String },
     /// Proxy response chunk (from server to client proxy)
     ProxyResponseChunk { req_id: String, chunk: String },
     /// Proxy response complete
@@ -231,7 +227,8 @@ async fn peer_data_channel_ready(ps_arc: &Arc<Mutex<PeerState>>) -> bool {
 
 fn payload_cluster_matches(payload: &serde_json::Value, cluster_id: &str) -> bool {
     payload
-        .get("cluster_id").or_else(|| payload.get("room_id"))
+        .get("cluster_id")
+        .or_else(|| payload.get("room_id"))
         .and_then(|v| v.as_str())
         .map(|id| id == cluster_id)
         .unwrap_or(false)
@@ -239,7 +236,9 @@ fn payload_cluster_matches(payload: &serde_json::Value, cluster_id: &str) -> boo
 
 fn ws_send_disconnected(err: &anyhow::Error) -> bool {
     let msg = err.to_string();
-    msg.contains("Sending after closing") || msg.contains("Connection reset") || msg.contains("broken pipe")
+    msg.contains("Sending after closing")
+        || msg.contains("Connection reset")
+        || msg.contains("broken pipe")
 }
 
 fn url_encode_component(s: &str) -> String {
@@ -259,12 +258,16 @@ fn url_encode_component(s: &str) -> String {
 }
 
 async fn send_progress(
-    ws_write: &Arc<Mutex<futures_util::stream::SplitSink<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    ws_write: &Arc<
+        Mutex<
+            futures_util::stream::SplitSink<
+                tokio_tungstenite::WebSocketStream<
+                    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                >,
+                Message,
+            >,
         >,
-        Message,
-    >>>,
+    >,
     req_id: &str,
     status: &str,
     progress_pct: Option<u8>,
@@ -282,12 +285,16 @@ async fn send_progress(
 }
 
 async fn execute_model_start_task(
-    ws_write: Arc<Mutex<futures_util::stream::SplitSink<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    ws_write: Arc<
+        Mutex<
+            futures_util::stream::SplitSink<
+                tokio_tungstenite::WebSocketStream<
+                    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                >,
+                Message,
+            >,
         >,
-        Message,
-    >>>,
+    >,
     shared_state: SharedState,
     proxy_state: Arc<crate::llm_proxy::ProxyState>,
     _cluster_id: String,
@@ -389,17 +396,23 @@ pub struct WebRTCManager {
     model_start_cmd_rx: Option<mpsc::Receiver<ModelStartAction>>,
     connection_cmd_rx: Option<mpsc::Receiver<ConnectionAction>>,
     peer_moderation_rx: Option<mpsc::Receiver<PeerModerationAction>>,
-    ws_write: Arc<Mutex<futures_util::stream::SplitSink<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    ws_write: Arc<
+        Mutex<
+            futures_util::stream::SplitSink<
+                tokio_tungstenite::WebSocketStream<
+                    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                >,
+                Message,
+            >,
         >,
-        Message,
-    >>>,
-    ws_read: Option<futures_util::stream::SplitStream<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+    ws_read: Option<
+        futures_util::stream::SplitStream<
+            tokio_tungstenite::WebSocketStream<
+                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+            >,
         >,
-    >>,
+    >,
     pending_requests: Arc<Mutex<HashMap<String, mpsc::Sender<Result<String, String>>>>>,
     pending_encrypted_consumer:
         Arc<Mutex<HashMap<String, crate::cluster_dc_e2ee::EncryptedConsumerState>>>,
@@ -713,7 +726,8 @@ impl WebRTCManager {
         path: &str,
         bytes_sent: u64,
     ) {
-        self.proxy_state.stats_request_start(req_id, remote_peer_id, model, bytes_sent);
+        self.proxy_state
+            .stats_request_start(req_id, remote_peer_id, model, bytes_sent);
         let mut exchanges = self.active_exchanges.lock().await;
         exchanges.insert(
             req_id.to_string(),
@@ -788,15 +802,46 @@ impl WebRTCManager {
         }
 
         if self.proxy_state.llm_registry.inner.attached_count().await == 0 {
-            return Err(anyhow::anyhow!("No LLM servers attached"));
+            let mut state = self.shared_state.lock().await;
+            let last_hash = state.last_advertised_hash.clone();
+            let gpu_host = state.last_gpu_host.clone();
+            let peer_info = state.peer_info.clone();
+            if !force && last_hash.as_deref() == Some(NO_LLM_CATALOG_HASH) {
+                return Ok(());
+            }
+            state.local_models.clear();
+            state.local_models_full.clear();
+            state.local_model_collisions.clear();
+            state.last_advertised_hash = Some(NO_LLM_CATALOG_HASH.to_string());
+            drop(state);
+            self.last_cluster_state_version
+                .store(version, Ordering::SeqCst);
+
+            let accepting_jobs = self.cluster_accepts_jobs_now().await;
+            let update_msg = ProtocolMessage::UpdateModels {
+                models: Vec::new(),
+                gpu_host,
+                accepting_jobs: Some(accepting_jobs),
+            };
+            let text = serde_json::to_string(&update_msg)?;
+            self.ws_write.lock().await.send(Message::Text(text)).await?;
+            println!(
+                "📤 Cleared model advertisements (no LLM servers attached){}",
+                peer_info
+                    .as_ref()
+                    .map(|p| format!(
+                        " from {}, {}",
+                        p.city.as_deref().unwrap_or("?"),
+                        p.country.as_deref().unwrap_or("?")
+                    ))
+                    .unwrap_or_default()
+            );
+            return Ok(());
         }
 
         let (last_hash, peer_info) = {
             let state = self.shared_state.lock().await;
-            (
-                state.last_advertised_hash.clone(),
-                state.peer_info.clone(),
-            )
+            (state.last_advertised_hash.clone(), state.peer_info.clone())
         };
 
         // Soft rebuild: unreachable attached servers are skipped so one dead
@@ -853,7 +898,11 @@ impl WebRTCManager {
             loaded,
             peer_info
                 .as_ref()
-                .map(|p| format!(" from {}, {}", p.city.as_deref().unwrap_or("?"), p.country.as_deref().unwrap_or("?")))
+                .map(|p| format!(
+                    " from {}, {}",
+                    p.city.as_deref().unwrap_or("?"),
+                    p.country.as_deref().unwrap_or("?")
+                ))
                 .unwrap_or_default()
         );
         Ok(())
@@ -1058,9 +1107,7 @@ impl WebRTCManager {
                 );
                 let now = crate::gpu_history::unix_now();
                 let mut state = self.shared_state.lock().await;
-                state
-                    .outgoing_model_requests
-                    .retain(|r| r.req_id != req_id);
+                state.outgoing_model_requests.retain(|r| r.req_id != req_id);
                 state.outgoing_model_requests.push(ModelStartRequestState {
                     req_id,
                     model,
@@ -1102,12 +1149,7 @@ impl WebRTCManager {
         Ok(())
     }
 
-    async fn grant_connection_allowance(
-        &self,
-        req_id: &str,
-        requester_peer_id: &str,
-        model: &str,
-    ) {
+    async fn grant_connection_allowance(&self, req_id: &str, requester_peer_id: &str, model: &str) {
         self.connection_allowances.lock().await.grant(
             req_id.to_string(),
             requester_peer_id.to_string(),
@@ -1134,11 +1176,8 @@ impl WebRTCManager {
                     .await;
             }
         }
-        self.send_protocol_message(&ProtocolMessage::RespondConnectOffer {
-            req_id,
-            accept,
-        })
-        .await
+        self.send_protocol_message(&ProtocolMessage::RespondConnectOffer { req_id, accept })
+            .await
     }
 
     async fn handle_connection_action(&self, action: ConnectionAction) -> anyhow::Result<()> {
@@ -1170,7 +1209,11 @@ impl WebRTCManager {
                     } else {
                         None
                     },
-                    if accept { Some(offer.model.clone()) } else { None },
+                    if accept {
+                        Some(offer.model.clone())
+                    } else {
+                        None
+                    },
                 )
                 .await?;
             }
@@ -1194,7 +1237,9 @@ impl WebRTCManager {
         self.ws_write
             .lock()
             .await
-            .send(Message::Text(serde_json::to_string(&req_msg).map_err(|e| e.to_string())?))
+            .send(Message::Text(
+                serde_json::to_string(&req_msg).map_err(|e| e.to_string())?,
+            ))
             .await
             .map_err(|e| e.to_string())?;
 
@@ -1288,7 +1333,7 @@ impl WebRTCManager {
                 let _ = cmd
                     .response_tx
                     .send(Err(
-                        "Missing connection approval for new WebRTC session".to_string(),
+                        "Missing connection approval for new WebRTC session".to_string()
                     ))
                     .await;
                 return Ok(());
@@ -1391,11 +1436,12 @@ impl WebRTCManager {
 
             if is_open {
                 let dc = ps.active_data_channel.as_ref().unwrap();
-                println!("✅ Data channel active for {}. Preparing proxy request...", target_peer);
+                println!(
+                    "✅ Data channel active for {}. Preparing proxy request...",
+                    target_peer
+                );
                 let req_id = self.next_proxy_req_id().await;
-                let body_bytes = serde_json::to_string(&cmd.body)
-                    .unwrap_or_default()
-                    .len() as u64;
+                let body_bytes = serde_json::to_string(&cmd.body).unwrap_or_default().len() as u64;
 
                 self.track_consumer_exchange(
                     &req_id,
@@ -1411,7 +1457,10 @@ impl WebRTCManager {
                     reqs.insert(req_id.clone(), cmd.response_tx);
                 }
 
-                println!("📤 Sending proxy request (ID: {}) to peer: {}", req_id, target_peer);
+                println!(
+                    "📤 Sending proxy request (ID: {}) to peer: {}",
+                    req_id, target_peer
+                );
                 tokio::time::sleep(std::time::Duration::from_millis(DC_OPEN_SETTLE_MS)).await;
                 if let Err(e) = self
                     .send_cluster_proxy_on_dc(dc, &req_id, &cmd.path, &cmd.body)
@@ -1423,12 +1472,13 @@ impl WebRTCManager {
                     println!("✅ Proxy request sent successfully");
                 }
             } else {
-                println!("⏳ Data channel not active yet for {}. Waiting for channel to open...", target_peer);
+                println!(
+                    "⏳ Data channel not active yet for {}. Waiting for channel to open...",
+                    target_peer
+                );
                 // Queue the request for when the channel opens
                 let req_id = self.next_proxy_req_id().await;
-                let body_bytes = serde_json::to_string(&cmd.body)
-                    .unwrap_or_default()
-                    .len() as u64;
+                let body_bytes = serde_json::to_string(&cmd.body).unwrap_or_default().len() as u64;
 
                 self.track_consumer_exchange(
                     &req_id,
@@ -1472,39 +1522,43 @@ impl WebRTCManager {
                                 let dc = dc_clone.clone();
                                 drop(ps_locked);
                                 println!("✅ Data channel to {} is now OPEN! Sending delayed proxy request...", my_target_peer);
-                                tokio::time::sleep(std::time::Duration::from_millis(DC_OPEN_SETTLE_MS)).await;
-                                let send_result = if crate::cluster_dc_e2ee::should_use_cluster_e2ee() {
-                                    let peer_id = my_name_delayed.lock().await.clone();
-                                    match crate::cluster_dc_e2ee::send_encrypted_proxy_request(
-                                        &dc,
-                                        &proxy_state_delayed,
-                                        &peer_id,
-                                        &req_id_delayed,
-                                        &path_delayed,
-                                        &body_delayed,
-                                        &cluster_id_delayed,
-                                        None,
-                                    )
-                                    .await
-                                    {
-                                        Ok(state) => {
-                                            pending_encrypted_delayed
-                                                .lock()
-                                                .await
-                                                .insert(req_id_delayed.clone(), state);
-                                            Ok(())
+                                tokio::time::sleep(std::time::Duration::from_millis(
+                                    DC_OPEN_SETTLE_MS,
+                                ))
+                                .await;
+                                let send_result =
+                                    if crate::cluster_dc_e2ee::should_use_cluster_e2ee() {
+                                        let peer_id = my_name_delayed.lock().await.clone();
+                                        match crate::cluster_dc_e2ee::send_encrypted_proxy_request(
+                                            &dc,
+                                            &proxy_state_delayed,
+                                            &peer_id,
+                                            &req_id_delayed,
+                                            &path_delayed,
+                                            &body_delayed,
+                                            &cluster_id_delayed,
+                                            None,
+                                        )
+                                        .await
+                                        {
+                                            Ok(state) => {
+                                                pending_encrypted_delayed
+                                                    .lock()
+                                                    .await
+                                                    .insert(req_id_delayed.clone(), state);
+                                                Ok(())
+                                            }
+                                            Err(e) => Err(e),
                                         }
-                                        Err(e) => Err(e),
-                                    }
-                                } else {
-                                    send_proxy_request(
-                                        &dc,
-                                        &req_id_delayed,
-                                        &path_delayed,
-                                        &body_delayed,
-                                    )
-                                    .await
-                                };
+                                    } else {
+                                        send_proxy_request(
+                                            &dc,
+                                            &req_id_delayed,
+                                            &path_delayed,
+                                            &body_delayed,
+                                        )
+                                        .await
+                                    };
                                 if let Err(e) = send_result {
                                     println!("❌ Failed to send delayed proxy request: {}", e);
                                     proxy_state_delayed.stats_request_error(&req_id_delayed);
@@ -1520,16 +1574,17 @@ impl WebRTCManager {
                         }
                         attempts += 1;
                     }
-                    println!("❌ Timeout waiting for data channel to open to {}", my_target_peer);
+                    println!(
+                        "❌ Timeout waiting for data channel to open to {}",
+                        my_target_peer
+                    );
                     if let Some(ps_arc) = peers_cleanup.lock().await.get(&my_target_peer) {
                         let ps = ps_arc.lock().await;
                         println!(
                             "   peer_state={:?} ice_state={:?} dc={:?}",
                             ps.pc.connection_state(),
                             ps.pc.ice_connection_state(),
-                            ps.active_data_channel
-                                .as_ref()
-                                .map(|dc| dc.ready_state())
+                            ps.active_data_channel.as_ref().map(|dc| dc.ready_state())
                         );
                     }
                     let ps_arc = peers_cleanup.lock().await.remove(&my_target_peer);
@@ -1641,11 +1696,14 @@ impl WebRTCManager {
                 )
                 .await;
 
-                println!("\n=== Available Network Models (room: {}) ===", self.cluster_id);
+                println!(
+                    "\n=== Available Network Models (room: {}) ===",
+                    self.cluster_id
+                );
                 if models.is_empty() {
                     println!("(No models available. Open another terminal)");
                 } else {
-            for model in &models {
+                    for model in &models {
                         let name = model.get("name").and_then(|n| n.as_str()).unwrap_or("?");
                         let peer_count = model
                             .get("_peer_count")
@@ -1664,7 +1722,11 @@ impl WebRTCManager {
                     }
                 }
             }
-            ProtocolMessage::PeersForModel { req_id, model: _, peers } => {
+            ProtocolMessage::PeersForModel {
+                req_id,
+                model: _,
+                peers,
+            } => {
                 if let Some(tx) = self.pending_peer_lookups.lock().await.remove(&req_id) {
                     let _ = tx.send(peers);
                 }
@@ -1691,9 +1753,7 @@ impl WebRTCManager {
                                     .await
                                     .allow_unattested_peers;
                                 if !peer_connection_allowed(allow_unattested, flags) {
-                                    let _ = tx.send(Err(
-                                        "Provider is not attested".to_string(),
-                                    ));
+                                    let _ = tx.send(Err("Provider is not attested".to_string()));
                                 } else {
                                     self.peer_attestation_hints
                                         .lock()
@@ -1702,10 +1762,9 @@ impl WebRTCManager {
                                     let _ = tx.send(Ok((peer, flags)));
                                 }
                             } else {
-                                let _ = tx.send(Err(
-                                    message
-                                        .unwrap_or_else(|| "Missing provider peer".to_string()),
-                                ));
+                                let _ = tx
+                                    .send(Err(message
+                                        .unwrap_or_else(|| "Missing provider peer".to_string())));
                             }
                         }
                     }
@@ -1732,9 +1791,7 @@ impl WebRTCManager {
                     .lock()
                     .await
                     .insert(requested_by.clone(), requester_flags);
-                println!(
-                    "📥 Connect offer: model={model} req_id={req_id} from={requested_by}"
-                );
+                println!("📥 Connect offer: model={model} req_id={req_id} from={requested_by}");
                 let allow_unattested = self
                     .proxy_state
                     .client_config
@@ -1748,8 +1805,7 @@ impl WebRTCManager {
                     .await
                     .auto_approve_inference_connections;
                 let accepts_jobs = self.cluster_accepts_jobs_now().await;
-                let attestation_ok =
-                    peer_connection_allowed(allow_unattested, requester_flags);
+                let attestation_ok = peer_connection_allowed(allow_unattested, requester_flags);
 
                 if auto_approve {
                     let accept = accepts_jobs && attestation_ok;
@@ -1769,11 +1825,7 @@ impl WebRTCManager {
                     self.respond_to_connect_offer(
                         req_id,
                         accept,
-                        if accept {
-                            Some(requested_by)
-                        } else {
-                            None
-                        },
+                        if accept { Some(requested_by) } else { None },
                         if accept { Some(model) } else { None },
                     )
                     .await?;
@@ -1790,13 +1842,15 @@ impl WebRTCManager {
                     state
                         .incoming_connection_offers
                         .retain(|o| o.req_id != req_id);
-                    state.incoming_connection_offers.push(IncomingConnectionOfferState {
-                        req_id,
-                        model,
-                        cluster_id: Some(self.cluster_id.clone()),
-                        requested_by,
-                        received_at_unix: now,
-                    });
+                    state
+                        .incoming_connection_offers
+                        .push(IncomingConnectionOfferState {
+                            req_id,
+                            model,
+                            cluster_id: Some(self.cluster_id.clone()),
+                            requested_by,
+                            received_at_unix: now,
+                        });
                 }
             }
             ProtocolMessage::RequestPeerConnect { .. }
@@ -1886,9 +1940,7 @@ impl WebRTCManager {
                 } else {
                     let now = crate::gpu_history::unix_now();
                     let mut state = self.shared_state.lock().await;
-                    state
-                        .incoming_model_offers
-                        .retain(|o| o.req_id != req_id);
+                    state.incoming_model_offers.retain(|o| o.req_id != req_id);
                     state.incoming_model_offers.push(ModelStartOfferState {
                         req_id,
                         model,
@@ -1941,10 +1993,7 @@ impl WebRTCManager {
 
                 if sdp_type == "offer" {
                     if !payload_cluster_matches(&payload, &self.cluster_id) {
-                        println!(
-                            "⚠️ Rejected offer from '{}' — room_id mismatch",
-                            from
-                        );
+                        println!("⚠️ Rejected offer from '{}' — room_id mismatch", from);
                         return Ok(());
                     }
                     if self.is_peer_blocked(&from).await {
@@ -1978,14 +2027,9 @@ impl WebRTCManager {
                         );
                         return Ok(());
                     }
-                    let connect_req_id = payload
-                        .get("connect_req_id")
-                        .and_then(|v| v.as_str());
+                    let connect_req_id = payload.get("connect_req_id").and_then(|v| v.as_str());
                     let Some(connect_req_id) = connect_req_id else {
-                        println!(
-                            "🚫 Rejected offer from '{}' — missing connect_req_id",
-                            from
-                        );
+                        println!("🚫 Rejected offer from '{}' — missing connect_req_id", from);
                         return Ok(());
                     };
                     let approved_model = self
@@ -2005,7 +2049,10 @@ impl WebRTCManager {
                         .await
                         .insert(from.clone(), approved_model);
                     let sdp = payload.get("sdp").and_then(|v| v.as_str()).unwrap_or("");
-                    println!("\n📩 Received incoming WebRTC session offer from '{}'!", from);
+                    println!(
+                        "\n📩 Received incoming WebRTC session offer from '{}'!",
+                        from
+                    );
 
                     let pc = Self::create_peer_connection().await?;
 
@@ -2044,7 +2091,10 @@ impl WebRTCManager {
                         let cluster_id = cluster_id_for_dc.clone();
                         let approved_models_inner = approved_models_outer.clone();
                         Box::pin(async move {
-                            println!("\n🚀 Dynamic Data Channel successfully mapped: '{}'", d_for_storage.label());
+                            println!(
+                                "\n🚀 Dynamic Data Channel successfully mapped: '{}'",
+                                d_for_storage.label()
+                            );
                             setup_data_channel_handlers(
                                 d_for_storage.clone(),
                                 pending_reqs_clone,
@@ -2064,8 +2114,9 @@ impl WebRTCManager {
                     }));
 
                     // Imposta l'offerta remota ricevuta
-                    pc.set_remote_description(RTCSessionDescription::offer(sdp.to_string())?).await?;
-                    
+                    pc.set_remote_description(RTCSessionDescription::offer(sdp.to_string())?)
+                        .await?;
+
                     // Crea la risposta locale (Answer)
                     let answer = pc.create_answer(None).await?;
                     pc.set_local_description(answer.clone()).await?;
@@ -2089,16 +2140,15 @@ impl WebRTCManager {
                         from: self.my_name.lock().await.clone(),
                         payload: reply_payload,
                     };
-                    
-                    self.ws_write.lock().await
+
+                    self.ws_write
+                        .lock()
+                        .await
                         .send(Message::Text(serde_json::to_string(&reply_msg)?))
                         .await?;
                 } else if sdp_type == "answer" {
                     if !payload_cluster_matches(&payload, &self.cluster_id) {
-                        println!(
-                            "⚠️ Rejected answer from '{}' — room_id mismatch",
-                            from
-                        );
+                        println!("⚠️ Rejected answer from '{}' — room_id mismatch", from);
                         return Ok(());
                     }
                     let sdp = payload.get("sdp").and_then(|v| v.as_str()).unwrap_or("");
@@ -2155,16 +2205,21 @@ fn record_token_usage_local(
 fn setup_data_channel_handlers(
     dc: Arc<RTCDataChannel>,
     pending_requests: Arc<Mutex<HashMap<String, mpsc::Sender<Result<String, String>>>>>,
-    pending_encrypted_consumer:
-        Arc<Mutex<HashMap<String, crate::cluster_dc_e2ee::EncryptedConsumerState>>>,
+    pending_encrypted_consumer: Arc<
+        Mutex<HashMap<String, crate::cluster_dc_e2ee::EncryptedConsumerState>>,
+    >,
     proxy_state: Arc<crate::llm_proxy::ProxyState>,
     active_exchanges: Arc<Mutex<HashMap<String, ProxyExchangeMeta>>>,
-    ws_write: Arc<Mutex<futures_util::stream::SplitSink<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    ws_write: Arc<
+        Mutex<
+            futures_util::stream::SplitSink<
+                tokio_tungstenite::WebSocketStream<
+                    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                >,
+                Message,
+            >,
         >,
-        Message,
-    >>>,
+    >,
     shared_state: SharedState,
     remote_peer_id: String,
     is_provider: bool,
@@ -2173,14 +2228,17 @@ fn setup_data_channel_handlers(
 ) {
     use crate::p2p_protocol::StreamMessage;
 
-    let pending_incoming =
-        Arc::new(Mutex::new(HashMap::<String, PendingIncomingProxyRequest>::new()));
-    let pending_encrypted_incoming = Arc::new(Mutex::new(
-        HashMap::<String, crate::cluster_dc_e2ee::PendingEncryptedIncomingRequest>::new(),
+    let pending_incoming = Arc::new(Mutex::new(
+        HashMap::<String, PendingIncomingProxyRequest>::new(),
     ));
-    let pending_encrypted_streams = Arc::new(Mutex::new(
-        HashMap::<String, crate::cluster_dc_e2ee::PendingEncryptedStream>::new(),
-    ));
+    let pending_encrypted_incoming = Arc::new(Mutex::new(HashMap::<
+        String,
+        crate::cluster_dc_e2ee::PendingEncryptedIncomingRequest,
+    >::new()));
+    let pending_encrypted_streams = Arc::new(Mutex::new(HashMap::<
+        String,
+        crate::cluster_dc_e2ee::PendingEncryptedStream,
+    >::new()));
     let dc_label = dc.label().to_owned();
     let dc_clone = dc.clone();
 
@@ -2209,8 +2267,7 @@ fn setup_data_channel_handlers(
             if let Ok(stream_msg) = serde_json::from_slice::<StreamMessage>(&msg.data) {
                 match (&stream_msg, is_provider_msg) {
                     (StreamMessage::EncryptedProxyRequest { .. }, true) => {
-                        let local_peer_id =
-                            shared_state_msg.lock().await.peer_id.clone();
+                        let local_peer_id = shared_state_msg.lock().await.peer_id.clone();
                         crate::cluster_dc_e2ee::dispatch_cluster_encrypted_proxy_request(
                             stream_msg,
                             proxy_state_msg_clone.clone(),
@@ -2268,8 +2325,7 @@ fn setup_data_channel_handlers(
                         return;
                     }
                     (StreamMessage::EncryptedProxyRequestEnd { req_id }, true) => {
-                        let local_peer_id =
-                            shared_state_msg.lock().await.peer_id.clone();
+                        let local_peer_id = shared_state_msg.lock().await.peer_id.clone();
                         crate::cluster_dc_e2ee::handle_encrypted_request_end(
                             &pending_encrypted_incoming_reqs,
                             proxy_state_msg_clone.clone(),
@@ -2294,8 +2350,7 @@ fn setup_data_channel_handlers(
                         false,
                     ) => {
                         if stream == &Some(true) && error.is_none() {
-                            if let Some(state) =
-                                pending_encrypted.lock().await.get(req_id).cloned()
+                            if let Some(state) = pending_encrypted.lock().await.get(req_id).cloned()
                             {
                                 pending_encrypted_streams_msg.lock().await.insert(
                                     req_id.clone(),
@@ -2353,11 +2408,9 @@ fn setup_data_channel_handlers(
 
                         match outcome {
                             Ok(crate::cluster_dc_e2ee::EncryptedStreamChunkOutcome::Waiting) => {}
-                            Ok(
-                                crate::cluster_dc_e2ee::EncryptedStreamChunkOutcome::Progress {
-                                    parts,
-                                },
-                            ) => {
+                            Ok(crate::cluster_dc_e2ee::EncryptedStreamChunkOutcome::Progress {
+                                parts,
+                            }) => {
                                 for part in parts {
                                     let chunk_len = part.len() as u64;
                                     let partial_tokens = {
@@ -2385,11 +2438,9 @@ fn setup_data_channel_handlers(
                                     }
                                 }
                             }
-                            Ok(
-                                crate::cluster_dc_e2ee::EncryptedStreamChunkOutcome::Finished {
-                                    parts,
-                                },
-                            ) => {
+                            Ok(crate::cluster_dc_e2ee::EncryptedStreamChunkOutcome::Finished {
+                                parts,
+                            }) => {
                                 for part in parts {
                                     let chunk_len = part.len() as u64;
                                     let partial_tokens = {
@@ -2505,11 +2556,7 @@ fn setup_data_channel_handlers(
                     }
                 }
                 match dc_msg {
-                    DataChannelMessage::ProxyRequest {
-                        req_id,
-                        path,
-                        body,
-                    } => {
+                    DataChannelMessage::ProxyRequest { req_id, path, body } => {
                         dispatch_proxy_request(
                             req_id,
                             path,
@@ -2533,9 +2580,7 @@ fn setup_data_channel_handlers(
                         );
                     }
                     DataChannelMessage::ProxyRequestChunk { req_id, seq, chunk } => {
-                        if let Some(pending) =
-                            pending_incoming_reqs.lock().await.get_mut(&req_id)
-                        {
+                        if let Some(pending) = pending_incoming_reqs.lock().await.get_mut(&req_id) {
                             pending.chunks.push((seq, chunk));
                         }
                     }
@@ -2650,11 +2695,8 @@ fn setup_data_channel_handlers(
                                     duration_ms: meta.started_at.elapsed().as_millis() as u64,
                                 };
                                 if let Ok(text) = serde_json::to_string(&report) {
-                                    let _ = ws_write_msg
-                                        .lock()
-                                        .await
-                                        .send(Message::Text(text))
-                                        .await;
+                                    let _ =
+                                        ws_write_msg.lock().await.send(Message::Text(text)).await;
                                 }
                             }
                         }
@@ -2693,12 +2735,16 @@ fn dispatch_proxy_request(
     proxy_state: Arc<crate::llm_proxy::ProxyState>,
     dc: Arc<RTCDataChannel>,
     consumer_peer_id: String,
-    ws_write: Arc<Mutex<futures_util::stream::SplitSink<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    ws_write: Arc<
+        Mutex<
+            futures_util::stream::SplitSink<
+                tokio_tungstenite::WebSocketStream<
+                    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                >,
+                Message,
+            >,
         >,
-        Message,
-    >>>,
+    >,
     shared_state: SharedState,
     cluster_id: String,
     approved_proxy_models: Option<Arc<Mutex<HashMap<String, String>>>>,
@@ -2800,9 +2846,10 @@ fn dispatch_proxy_request(
                 while let Some(Ok(chunk_bytes)) = stream.next().await {
                     if let Ok(chunk_str) = String::from_utf8(chunk_bytes.to_vec()) {
                         bytes_received += chunk_str.len() as u64;
-                        let partial_tokens = accumulate_and_parse_usage(&mut response_buffer, &chunk_str)
-                            .map(|u| u.total_tokens)
-                            .unwrap_or(0);
+                        let partial_tokens =
+                            accumulate_and_parse_usage(&mut response_buffer, &chunk_str)
+                                .map(|u| u.total_tokens)
+                                .unwrap_or(0);
                         proxy_state.stats_stream_progress(
                             &req_id,
                             chunk_str.len() as u64,
@@ -2824,11 +2871,7 @@ fn dispatch_proxy_request(
                     total_tokens: 0,
                 });
 
-                proxy_state.stats_request_complete(
-                    &req_id,
-                    usage.total_tokens,
-                    bytes_received,
-                );
+                proxy_state.stats_request_complete(&req_id, usage.total_tokens, bytes_received);
 
                 let peer_id = shared_state.lock().await.peer_id.clone();
                 crate::token_usage::publish_token_usage_report(

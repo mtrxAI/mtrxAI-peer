@@ -75,9 +75,7 @@ fn probe_native_vendors() -> Option<GpuHostStatus> {
         }
     }
     if reg.apple {
-        if let (Some(ioreg), Some(sysctl)) =
-            (reg.apple_ioreg.as_ref(), reg.apple_sysctl.as_ref())
-        {
+        if let (Some(ioreg), Some(sysctl)) = (reg.apple_ioreg.as_ref(), reg.apple_sysctl.as_ref()) {
             if let Some(gpu) = probe_apple(ioreg, sysctl) {
                 results.push(gpu);
             }

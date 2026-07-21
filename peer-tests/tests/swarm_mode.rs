@@ -1,5 +1,5 @@
 use peer::network_catalog::sync_unified_network_models;
-use peer::p2p_protocol::{encode_gossip, decode_gossip, GossipMessage, StreamMessage};
+use peer::p2p_protocol::{decode_gossip, encode_gossip, GossipMessage, StreamMessage};
 use peer::shared::AppState;
 use serde_json::json;
 use std::collections::HashMap;
@@ -81,20 +81,21 @@ fn compact_models_for_gossip_strips_heavy_fields() {
     assert_eq!(compact[0]["name"], "llama3");
     assert!(compact[0].get("modelfile").is_none());
     assert_eq!(compact[0]["_status"]["loaded"], true);
-    let bytes = peer::p2p_protocol::encode_gossip(&peer::p2p_protocol::GossipMessage::CatalogUpdate {
-        peer_id: "p1".into(),
-        models: compact,
-        peer_info: None,
-        gpu_host: None,
-        accepting_jobs: true,
-        listen_addrs: vec![],
-        tee_capable: None,
-        gpu_model: None,
-        attestation_expiry: None,
-        trust_level: None,
-        provider_static_pk: None,
-    })
-    .unwrap();
+    let bytes =
+        peer::p2p_protocol::encode_gossip(&peer::p2p_protocol::GossipMessage::CatalogUpdate {
+            peer_id: "p1".into(),
+            models: compact,
+            peer_info: None,
+            gpu_host: None,
+            accepting_jobs: true,
+            listen_addrs: vec![],
+            tee_capable: None,
+            gpu_model: None,
+            attestation_expiry: None,
+            trust_level: None,
+            provider_static_pk: None,
+        })
+        .unwrap();
     assert!(bytes.len() < peer::p2p_protocol::GOSSIP_CATALOG_MAX_BYTES);
 }
 

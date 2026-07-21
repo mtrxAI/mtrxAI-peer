@@ -99,11 +99,7 @@ impl LlmServerRegistry {
         }
     }
 
-    async fn load_api_key(
-        &self,
-        server_id: &str,
-        config: &ClientConfig,
-    ) -> Result<Option<String>> {
+    async fn load_api_key(&self, server_id: &str, config: &ClientConfig) -> Result<Option<String>> {
         self.tx_store
             .get_server_api_key(
                 server_id,
@@ -129,8 +125,7 @@ impl LlmServerRegistry {
         } else {
             None
         };
-        let backend =
-            LlmBackend::from_server_entry_probed(entry, api_key, client).await?;
+        let backend = LlmBackend::from_server_entry_probed(entry, api_key, client).await?;
         Ok((backend, inference_engine))
     }
 
@@ -212,11 +207,7 @@ impl LlmServerRegistry {
         id
     }
 
-    pub async fn attach(
-        &self,
-        config: &mut ClientConfig,
-        id: &str,
-    ) -> Result<()> {
+    pub async fn attach(&self, config: &mut ClientConfig, id: &str) -> Result<()> {
         let idx = config
             .llm_servers
             .iter()
@@ -320,9 +311,7 @@ impl LlmServerRegistry {
                     snapshot
                 }
                 Err(e) => {
-                    eprintln!(
-                        "⚠️ Skipping LLM server {server_id} during catalog rebuild: {e}"
-                    );
+                    eprintln!("⚠️ Skipping LLM server {server_id} during catalog rebuild: {e}");
                     let mut inner = self.inner.write().await;
                     if let Some(runtime) = inner.servers.get_mut(&server_id) {
                         runtime.connected = false;
@@ -377,7 +366,11 @@ impl LlmServerRegistry {
             .and_then(|s| s.inference_engine.clone())
     }
 
-    pub fn catalog_source_for(kind: &str, inference_engine: Option<&str>, ollama_backend: bool) -> &'static str {
+    pub fn catalog_source_for(
+        kind: &str,
+        inference_engine: Option<&str>,
+        ollama_backend: bool,
+    ) -> &'static str {
         if !is_inference_cell_kind(kind) {
             return "ollama";
         }
@@ -472,9 +465,7 @@ impl LlmServerRegistry {
                         m.models
                             .iter()
                             .filter(|model| {
-                                model
-                                    .get("_source_server")
-                                    .and_then(|v| v.as_str())
+                                model.get("_source_server").and_then(|v| v.as_str())
                                     == Some(entry.id.as_str())
                             })
                             .count()
@@ -509,12 +500,9 @@ impl LlmServerRegistry {
             let ollama_backend = runtime
                 .map(|r| r.backend.supports_ollama_native())
                 .unwrap_or(false);
-            let catalog_source = Self::catalog_source_for(
-                &entry.kind,
-                inference_engine.as_deref(),
-                ollama_backend,
-            )
-            .to_string();
+            let catalog_source =
+                Self::catalog_source_for(&entry.kind, inference_engine.as_deref(), ollama_backend)
+                    .to_string();
             views.push(LlmServerView {
                 id: entry.id.clone(),
                 kind: entry.kind.clone(),
@@ -695,9 +683,9 @@ pub fn merge_catalog_snapshots(
     }
 }
 
-/// Returns models suitable for cluster/swarm advertisement (excludes local-only servers
-/// and user-hidden models). Loaded CPU/mixed/remote models are included so active
-/// peers remain discoverable; GPU residency stays in `_status` for ranking.
+/// Returns models suitable for cluster/swarm advertisement (excludes local-only servers,
+/// user-hidden models, and unloaded models). Only loaded models are announced;
+/// loaded CPU/mixed/remote stay discoverable; GPU residency stays in `_status` for ranking.
 pub fn filter_models_for_cluster_advertisement(
     snapshot: &MergedCatalog,
     config: &ClientConfig,
@@ -874,7 +862,10 @@ mod tests {
             LlmServerRegistry::catalog_source_for("inference-cell", None, false),
             "huggingface"
         );
-        assert_eq!(LlmServerRegistry::catalog_source_for("ollama", None, false), "ollama");
+        assert_eq!(
+            LlmServerRegistry::catalog_source_for("ollama", None, false),
+            "ollama"
+        );
     }
 
     #[test]
@@ -887,14 +878,22 @@ mod tests {
             "inference-cell",
             Some("llamacpp")
         ));
-        assert!(LlmServerRegistry::inference_cell_uses_hf_catalog("inference-cell", None));
-        assert!(!LlmServerRegistry::inference_cell_uses_hf_catalog("ollama", None));
+        assert!(LlmServerRegistry::inference_cell_uses_hf_catalog(
+            "inference-cell",
+            None
+        ));
+        assert!(!LlmServerRegistry::inference_cell_uses_hf_catalog(
+            "ollama", None
+        ));
     }
 
     #[test]
     fn merge_first_wins_on_duplicate_names() {
         let ordered = vec![
-            (sample_entry("a", "ollama", 0), snapshot_with_models(&["llama3", "phi3"])),
+            (
+                sample_entry("a", "ollama", 0),
+                snapshot_with_models(&["llama3", "phi3"]),
+            ),
             (
                 sample_entry("b", "vllm", 1),
                 snapshot_with_models(&["llama3", "mistral"]),
@@ -904,7 +903,12 @@ mod tests {
         assert_eq!(merged.model_names, vec!["llama3", "phi3", "mistral"]);
         assert_eq!(merged.collisions.len(), 1);
         assert_eq!(merged.collisions[0].name, "llama3");
-        assert!(merged.models[0].get("_source_kind").and_then(|v| v.as_str()) == Some("ollama"));
+        assert!(
+            merged.models[0]
+                .get("_source_kind")
+                .and_then(|v| v.as_str())
+                == Some("ollama")
+        );
     }
 
     #[test]
@@ -979,7 +983,7 @@ mod tests {
     }
 
     #[test]
-    fn filter_includes_loaded_cpu_mixed_and_remote() {
+    fn filter_includes_loaded_cpu_mixed_and_remote_excludes_unloaded() {
         let merged = merged_with_status_models(vec![
             json!({
                 "name": "unloaded",
@@ -1001,9 +1005,6 @@ mod tests {
         ]);
         let config = ClientConfig::default();
         let (_advertised, names) = filter_models_for_cluster_advertisement(&merged, &config);
-        assert_eq!(
-            names,
-            vec!["unloaded", "mixed", "cpu-loaded", "gpu-ready", "remote"]
-        );
+        assert_eq!(names, vec!["mixed", "cpu-loaded", "gpu-ready", "remote"]);
     }
 }

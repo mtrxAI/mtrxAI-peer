@@ -39,14 +39,25 @@ async fn aggregated_network_models_deduplicate_peer_across_clusters() {
 
     let swarm_network_models = Arc::new(Mutex::new(HashMap::new()));
 
-    sync_unified_network_models(&shared_state, &cluster_network_models, &swarm_network_models).await;
+    sync_unified_network_models(
+        &shared_state,
+        &cluster_network_models,
+        &swarm_network_models,
+    )
+    .await;
 
     let state = shared_state.lock().await;
     assert_eq!(state.network_models.len(), 1);
     assert_eq!(state.network_models[0]["name"], "llama3");
     assert_eq!(state.network_models[0]["_peer_count"], 1);
     assert_eq!(state.network_models[0]["_loaded_count"], 1);
-    assert_eq!(state.network_models[0]["_clusters"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        state.network_models[0]["_clusters"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
 }
 
 #[tokio::test]
@@ -65,7 +76,12 @@ async fn aggregated_network_models_keeps_distinct_peers() {
 
     let swarm_network_models = Arc::new(Mutex::new(HashMap::new()));
 
-    sync_unified_network_models(&shared_state, &cluster_network_models, &swarm_network_models).await;
+    sync_unified_network_models(
+        &shared_state,
+        &cluster_network_models,
+        &swarm_network_models,
+    )
+    .await;
 
     let state = shared_state.lock().await;
     assert_eq!(state.network_models.len(), 1);

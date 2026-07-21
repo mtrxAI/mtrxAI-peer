@@ -1,6 +1,6 @@
 use crate::client_config::{
-    save_client_config, swarm_is_connected, ClientConfig, ClusterMembership, SwarmMembership,
-    cluster_is_connected,
+    cluster_is_connected, save_client_config, swarm_is_connected, ClientConfig, ClusterMembership,
+    SwarmMembership,
 };
 use chrono::Timelike;
 use std::sync::Arc;
@@ -54,7 +54,10 @@ pub fn window_state(start_mins: u32, end_mins: u32, now_mins: u32) -> ScheduleWi
     }
 }
 
-pub fn resolve_cluster_schedule(cfg: &ClientConfig, cluster: &ClusterMembership) -> ResolvedSchedule {
+pub fn resolve_cluster_schedule(
+    cfg: &ClientConfig,
+    cluster: &ClusterMembership,
+) -> ResolvedSchedule {
     resolve_schedule(
         cluster.schedule_enabled,
         cluster.schedule_start.as_deref(),
@@ -100,9 +103,7 @@ pub fn schedule_status_from_resolved(schedule: &ResolvedSchedule) -> ScheduleSta
     let now_mins = local_now_mins();
     ScheduleStatusFields {
         schedule_enabled: schedule.enabled,
-        schedule_start: schedule
-            .enabled
-            .then(|| format_hhmm(schedule.start_mins)),
+        schedule_start: schedule.enabled.then(|| format_hhmm(schedule.start_mins)),
         schedule_end: schedule.enabled.then(|| format_hhmm(schedule.end_mins)),
         schedule_next_transition_at: next_transition_unix(schedule),
         schedule_inside_window: is_inside_window(schedule.start_mins, schedule.end_mins, now_mins),
@@ -118,7 +119,10 @@ pub struct ScheduleStatusFields {
     pub schedule_inside_window: bool,
 }
 
-pub fn cluster_schedule_fields(cfg: &ClientConfig, cluster: &ClusterMembership) -> ScheduleStatusFields {
+pub fn cluster_schedule_fields(
+    cfg: &ClientConfig,
+    cluster: &ClusterMembership,
+) -> ScheduleStatusFields {
     schedule_status_from_resolved(&resolve_cluster_schedule(cfg, cluster))
 }
 
@@ -143,7 +147,9 @@ pub fn next_transition_unix(schedule: &ResolvedSchedule) -> Option<u64> {
     } else {
         schedule.start_mins
     };
-    let mut target = now.date_naive().and_hms_opt(target_mins / 60, target_mins % 60, 0)?;
+    let mut target = now
+        .date_naive()
+        .and_hms_opt(target_mins / 60, target_mins % 60, 0)?;
     if inside && target_mins <= now_mins {
         target += chrono::Duration::days(1);
     }

@@ -1,6 +1,6 @@
 use peer::client_config::ClientConfig;
-use peer::llm_registry::{merge_catalog_snapshots, migrate_config, ModelCollision};
 use peer::llm_backend::normalize_backend_label;
+use peer::llm_registry::{merge_catalog_snapshots, migrate_config, ModelCollision};
 use peer::ollama_client::ModelCatalogSnapshot;
 use serde_json::json;
 
@@ -21,10 +21,7 @@ fn entry(id: &str, kind: &str, order: u32) -> peer::client_config::LlmServerEntr
 
 fn snap(names: &[&str]) -> ModelCatalogSnapshot {
     ModelCatalogSnapshot {
-        models: names
-            .iter()
-            .map(|n| json!({ "name": n }))
-            .collect(),
+        models: names.iter().map(|n| json!({ "name": n })).collect(),
         model_names: names.iter().map(|s| s.to_string()).collect(),
         gpu_host: None,
     }
@@ -39,7 +36,9 @@ fn registry_merge_routes_first_server_model() {
     assert_eq!(merged.model_names, vec!["alpha", "beta"]);
     assert!(merged.collisions.is_empty());
     assert_eq!(
-        merged.models[1].get("_source_server").and_then(|v| v.as_str()),
+        merged.models[1]
+            .get("_source_server")
+            .and_then(|v| v.as_str()),
         Some("srv-b")
     );
 }
@@ -52,7 +51,10 @@ fn registry_merge_records_collisions() {
     ]);
     assert_eq!(merged.model_names, vec!["shared", "unique"]);
     assert_eq!(merged.collisions.len(), 1);
-    let ModelCollision { name, skipped_server } = &merged.collisions[0];
+    let ModelCollision {
+        name,
+        skipped_server,
+    } = &merged.collisions[0];
     assert_eq!(name, "shared");
     assert!(skipped_server.contains("vllm"));
 }

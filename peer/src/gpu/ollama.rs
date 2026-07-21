@@ -35,8 +35,14 @@ pub fn parse_gpu_from_ollama_info(body: &Value) -> Option<GpuHostStatus> {
             } else {
                 Some(nvidia_architecture_label(compute))
             },
-            driver_version: gpu.get("driver").and_then(|v| v.as_str()).map(str::to_string),
-            pci_bus_id: gpu.get("gpu_id").and_then(|v| v.as_str()).map(str::to_string),
+            driver_version: gpu
+                .get("driver")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            pci_bus_id: gpu
+                .get("gpu_id")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
             utilization_pct: pct_from_used_total(used, total),
             memory_utilization_pct: if total > 0 {
                 Some(pct_from_used_total(used, total))

@@ -29,7 +29,13 @@ impl CustomEndpointBackend {
                     format!("{}/{}", self.base_url.trim_end_matches('/'), u)
                 }
             })
-            .unwrap_or_else(|| format!("{}{}", self.base_url.trim_end_matches('/'), "/v1/chat/completions"))
+            .unwrap_or_else(|| {
+                format!(
+                    "{}{}",
+                    self.base_url.trim_end_matches('/'),
+                    "/v1/chat/completions"
+                )
+            })
     }
 
     pub async fn health_check(&self) -> Result<()> {

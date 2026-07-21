@@ -118,7 +118,10 @@ pub fn avg_optional_u8(values: impl Iterator<Item = u8>) -> Option<u8> {
     }
 }
 
-#[cfg_attr(not(all(target_os = "macos", target_arch = "aarch64")), allow(dead_code))]
+#[cfg_attr(
+    not(all(target_os = "macos", target_arch = "aarch64")),
+    allow(dead_code)
+)]
 pub fn mb_from_bytes(bytes: u64) -> u64 {
     bytes / (1024 * 1024)
 }

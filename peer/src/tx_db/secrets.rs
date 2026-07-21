@@ -91,7 +91,10 @@ impl TxStore {
 
     pub fn delete_server_api_key_sync(&self, server_id: &str) -> Result<()> {
         let rw = self.db.rw_transaction()?;
-        if let Some(record) = rw.get().primary::<LlmServerSecretRecord>(server_id.to_string())? {
+        if let Some(record) = rw
+            .get()
+            .primary::<LlmServerSecretRecord>(server_id.to_string())?
+        {
             rw.remove(record)?;
         }
         rw.commit()?;
@@ -139,11 +142,7 @@ impl TxStore {
         let peer_id = peer_id.map(str::to_string);
         let service_id = service_id.map(str::to_string);
         tokio::task::spawn_blocking(move || {
-            store.get_server_api_key_sync(
-                &server_id,
-                peer_id.as_deref(),
-                service_id.as_deref(),
-            )
+            store.get_server_api_key_sync(&server_id, peer_id.as_deref(), service_id.as_deref())
         })
         .await?
     }
@@ -196,7 +195,10 @@ impl TxStore {
 
     pub fn delete_server_admin_token_sync(&self, server_id: &str) -> Result<()> {
         let rw = self.db.rw_transaction()?;
-        if let Some(record) = rw.get().primary::<LlmServerAdminTokenRecord>(server_id.to_string())? {
+        if let Some(record) = rw
+            .get()
+            .primary::<LlmServerAdminTokenRecord>(server_id.to_string())?
+        {
             rw.remove(record)?;
         }
         rw.commit()?;
@@ -244,11 +246,7 @@ impl TxStore {
         let peer_id = peer_id.map(str::to_string);
         let service_id = service_id.map(str::to_string);
         tokio::task::spawn_blocking(move || {
-            store.get_server_admin_token_sync(
-                &server_id,
-                peer_id.as_deref(),
-                service_id.as_deref(),
-            )
+            store.get_server_admin_token_sync(&server_id, peer_id.as_deref(), service_id.as_deref())
         })
         .await?
     }
@@ -256,7 +254,8 @@ impl TxStore {
     pub async fn delete_server_admin_token(&self, server_id: &str) -> Result<()> {
         let store = self.clone();
         let server_id = server_id.to_string();
-        tokio::task::spawn_blocking(move || store.delete_server_admin_token_sync(&server_id)).await?
+        tokio::task::spawn_blocking(move || store.delete_server_admin_token_sync(&server_id))
+            .await?
     }
 
     pub async fn has_server_admin_token(&self, server_id: &str) -> Result<bool> {

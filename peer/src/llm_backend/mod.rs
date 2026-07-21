@@ -8,7 +8,9 @@ pub use ollama::OllamaBackend;
 pub use openai_compat::OpenAiCompatBackend;
 
 use crate::client_config::{is_custom_server_kind, is_inference_cell_kind, LlmServerEntry};
-use crate::ollama_client::{build_model_catalog, gpu_probe_mode, GpuProbeMode, ModelCatalogSnapshot};
+use crate::ollama_client::{
+    build_model_catalog, gpu_probe_mode, GpuProbeMode, ModelCatalogSnapshot,
+};
 use anyhow::{anyhow, Result};
 use mtrxai_icell_api::{CellInfo, INFO_PATH};
 use reqwest::Client;
@@ -32,11 +34,7 @@ pub enum LlmBackend {
 }
 
 impl LlmBackend {
-    pub fn from_config(
-        kind_str: &str,
-        base_url: &str,
-        client: Client,
-    ) -> Result<Self> {
+    pub fn from_config(kind_str: &str, base_url: &str, client: Client) -> Result<Self> {
         Self::from_server_entry(
             &LlmServerEntry {
                 id: String::new(),
@@ -68,14 +66,14 @@ impl LlmBackend {
                 client,
                 api_key,
             })),
-            LlmBackendKind::OpenAiCompat | LlmBackendKind::LocalAi => Ok(LlmBackend::OpenAiCompat(
-                OpenAiCompatBackend {
+            LlmBackendKind::OpenAiCompat | LlmBackendKind::LocalAi => {
+                Ok(LlmBackend::OpenAiCompat(OpenAiCompatBackend {
                     base_url: url,
                     client,
                     label: entry.kind.clone(),
                     api_key,
-                },
-            )),
+                }))
+            }
             LlmBackendKind::Custom => Ok(LlmBackend::Custom(CustomEndpointBackend {
                 base_url: url,
                 client,
@@ -185,7 +183,11 @@ impl LlmBackend {
         }
     }
 
-    pub async fn forward_post(&self, path: &str, body: &Value) -> Result<reqwest::Response, reqwest::Error> {
+    pub async fn forward_post(
+        &self,
+        path: &str,
+        body: &Value,
+    ) -> Result<reqwest::Response, reqwest::Error> {
         let url = format!("{}{}", self.base_url(), path);
         let mut req = self.client().post(&url).json(body);
         req = auth::apply_api_key(req, self.api_key());
@@ -248,7 +250,8 @@ impl LlmBackend {
         req = auth::apply_api_key(req, self.api_key());
         let resp = req.send().await?;
         if resp.status() == reqwest::StatusCode::METHOD_NOT_ALLOWED {
-            let fallback = serde_json::json!({ "model": model_name, "name": model_name }).to_string();
+            let fallback =
+                serde_json::json!({ "model": model_name, "name": model_name }).to_string();
             let mut req = self
                 .client()
                 .post(&url)
@@ -406,7 +409,10 @@ pub fn backend_help(kind: LlmBackendKind) -> &'static str {
     }
 }
 
-pub fn ensure_backend(config: &crate::client_config::ClientConfig, client: Client) -> Result<LlmBackend> {
+pub fn ensure_backend(
+    config: &crate::client_config::ClientConfig,
+    client: Client,
+) -> Result<LlmBackend> {
     let kind = config.llm_backend.as_deref().unwrap_or("ollama");
     let url = config
         .llm_url
