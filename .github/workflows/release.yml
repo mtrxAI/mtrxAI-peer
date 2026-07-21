@@ -399,8 +399,34 @@ jobs:
 
       - name: Stage release files
         run: |
-          mkdir -p release-upload
-          find dist -type f \( \
+          set -euo pipefail
+          # GitHub Release assets are flat (no real folders), so stage one directory
+          # per target and publish each as a zip: desktop-windows-amd64.zip, etc.
+          mkdir -p release-staging release-upload
+          while IFS= read -r -d '' f; do
+            rel="${f#dist/}"
+            artifact="${rel%%/*}"
+            base="$(basename "$f")"
+            case "$artifact" in
+              attestation-desktop-*)
+                folder="desktop-${artifact#attestation-desktop-}"
+                ;;
+              attestation-docker-linux-*)
+                folder="docker-linux-${artifact#attestation-docker-linux-}"
+                ;;
+              *)
+                folder="${artifact#attestation-}"
+                ;;
+            esac
+            dest="release-staging/${folder}"
+            mkdir -p "${dest}"
+            if [[ -e "${dest}/${base}" ]]; then
+              echo "::error::Duplicate file in ${folder}: ${base} (from ${f})" >&2
+              exit 1
+            fi
+            cp -f "$f" "${dest}/${base}"
+            echo "Staged ${folder}/${base} <- ${f}"
+          done < <(find dist -type f \( \
             -name 'allowed_build.json' -o \
             -name '*.AppImage' -o \
             -name '*.deb' -o \
@@ -410,7 +436,17 @@ jobs:
             -name '*.tar.gz' -o \
             -name 'mtrxai' -o \
             -name 'mtrxai.exe' \
-          \) -exec cp --parents {} release-upload/ \;
+          \) -print0)
+
+          shopt -s nullglob
+          for dir in release-staging/*/; do
+            name="$(basename "${dir}")"
+            zip_path="release-upload/${name}.zip"
+            # Store folder as top-level entry inside the zip (name/...)
+            (cd release-staging && zip -r "../${zip_path}" "${name}")
+            echo "Packed ${zip_path}"
+          done
+          ls -la release-upload
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -427,16 +463,22 @@ jobs:
             docker pull ${{ needs.resolve-version.outputs.client_image }}:${{ needs.resolve-version.outputs.version }}-arm64
             ```
 
-            ## Desktop installers
+            ## Desktop packages (one zip folder per target)
 
             | Platform | Arch | Asset |
             |----------|------|-------|
-            | Linux | amd64, arm64 | `.AppImage`, `.deb` |
-            | Windows | amd64, arm64 | `.msi`, NSIS `*-setup.exe` |
-            | macOS | arm64 | `.dmg` |
+            | Linux | amd64 | `desktop-linux-amd64.zip` |
+            | Linux | arm64 | `desktop-linux-arm64.zip` |
+            | Windows | **x64 (most PCs)** | `desktop-windows-amd64.zip` |
+            | Windows | arm64 | `desktop-windows-arm64.zip` |
+            | macOS | arm64 | `desktop-macos-arm64.zip` |
 
-            Attested `allowed_build.json` manifests are attached for each platform/arch.
-          files: release-upload/**/*
+            Each zip contains the portable binary, installers (`.msi` / `*-setup.exe` / `.AppImage` / `.deb` / `.dmg`), and `allowed_build.json`.
+
+            Docker image tarballs: `docker-linux-amd64.zip`, `docker-linux-arm64.zip`.
+
+            > On Windows x64, open `desktop-windows-amd64.zip` and run `*_x64-setup.exe` or `*_x64_en-US.msi` — not the arm64 package.
+          files: release-upload/*
           fail_on_unmatched_files: false
 
   dispatch-attestation:
