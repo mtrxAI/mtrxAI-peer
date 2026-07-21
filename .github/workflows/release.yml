@@ -155,7 +155,7 @@ jobs:
           docker push "${REMOTE}:${ARCH_TAG}"
           echo "Pushed ${REMOTE}:${ARCH_TAG} build_id=${BUILD_ID}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: attestation-docker-linux-${{ matrix.arch }}
           if-no-files-found: error
@@ -364,7 +364,7 @@ jobs:
           }
           Write-Host "Desktop Windows/${{ matrix.arch }} attested: build_id=$($manifest.build_id) sha=$($actual.Substring(0,16))..."
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           if-no-files-found: error
