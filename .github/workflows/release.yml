@@ -450,7 +450,7 @@ jobs:
           done
           ls -la release-upload
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event_name == 'push' && github.ref_name || format('v{0}', needs.resolve-version.outputs.version) }}
           name: mtrxAI peer v${{ needs.resolve-version.outputs.version }}
