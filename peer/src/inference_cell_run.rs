@@ -3,24 +3,10 @@ use crate::gpu_history::unix_now;
 use crate::ollama_client::gpu_probe_mode;
 use crate::shared::{LocalModelRunState, SharedState};
 use anyhow::{anyhow, Context, Result};
+use mtrxai_icell_api::{JobStatus, PullAccepted, PullJobRecord, MODELS_PULL_PATH};
 use reqwest::Client;
-use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Duration;
-
-#[derive(Debug, Deserialize)]
-struct PullAccepted {
-    job_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct PullJobStatus {
-    status: String,
-    #[serde(default)]
-    error: Option<String>,
-    #[serde(default)]
-    model_id: Option<String>,
-}
 
 async fn upsert_local_run(
     shared_state: &SharedState,
@@ -207,7 +193,7 @@ async fn start_pull(
     hf_repo: &str,
     quant: &str,
 ) -> Result<String> {
-    let url = format!("{base_url}/mtrxai/v1/models/pull");
+    let url = format!("{base_url}{MODELS_PULL_PATH}");
     let mut req = client.post(&url).json(&serde_json::json!({
         "repo": hf_repo,
         "quant": quant,
@@ -240,7 +226,7 @@ async fn poll_pull_job(
     display_name: &str,
     cell_job_id: &str,
 ) -> Result<()> {
-    let url = format!("{base_url}/mtrxai/v1/models/pull/{cell_job_id}");
+    let url = format!("{base_url}{}", mtrxai_icell_api::paths::pull_job(cell_job_id));
     loop {
         let mut req = client.get(&url);
         if let Some(token) = admin_token.filter(|t| !t.is_empty()) {
@@ -256,9 +242,9 @@ async fn poll_pull_job(
             return Err(anyhow!("inference-cell pull status failed: {text}"));
         }
 
-        let status: PullJobStatus = resp.json().await.context("parse pull job status")?;
-        match status.status.as_str() {
-            "queued" => {
+        let status: PullJobRecord = resp.json().await.context("parse pull job status")?;
+        match status.status {
+            JobStatus::Queued => {
                 upsert_local_run(
                     shared_state,
                     local_job_id,
@@ -269,7 +255,7 @@ async fn poll_pull_job(
                 )
                 .await;
             }
-            "running" => {
+            JobStatus::Running => {
                 upsert_local_run(
                     shared_state,
                     local_job_id,
@@ -280,7 +266,7 @@ async fn poll_pull_job(
                 )
                 .await;
             }
-            "importing" => {
+            JobStatus::Importing => {
                 upsert_local_run(
                     shared_state,
                     local_job_id,
@@ -291,16 +277,13 @@ async fn poll_pull_job(
                 )
                 .await;
             }
-            "ok" => return Ok(()),
-            "failed" => {
+            JobStatus::Ok => return Ok(()),
+            JobStatus::Failed => {
                 return Err(anyhow!(
                     status
                         .error
                         .unwrap_or_else(|| "inference-cell pull failed".to_string())
                 ));
-            }
-            other => {
-                return Err(anyhow!("unexpected inference-cell pull status: {other}"));
             }
         }
 

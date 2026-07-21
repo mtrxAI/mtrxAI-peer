@@ -5,17 +5,18 @@ use crate::gpu::util::{
 };
 use crate::shared::{GpuDeviceInfo, GpuHostStatus};
 use serde_json::Value;
+use std::path::Path;
 
-pub fn probe_amd_smi() -> Option<GpuHostStatus> {
-    if let Some(status) = probe_amd_smi_json() {
+pub fn probe_amd_smi(amd_smi: &Path) -> Option<GpuHostStatus> {
+    if let Some(status) = probe_amd_smi_json(amd_smi) {
         return Some(status);
     }
-    probe_amd_smi_monitor_csv()
+    probe_amd_smi_monitor_csv(amd_smi)
 }
 
-fn probe_amd_smi_json() -> Option<GpuHostStatus> {
-    let static_json = run_command("amd-smi", &["static", "--json"])?;
-    let metric_json = run_command("amd-smi", &["metric", "--json"]).unwrap_or_default();
+fn probe_amd_smi_json(amd_smi: &Path) -> Option<GpuHostStatus> {
+    let static_json = run_command(amd_smi, &["static", "--json"])?;
+    let metric_json = run_command(amd_smi, &["metric", "--json"]).unwrap_or_default();
 
     let static_body: Value = serde_json::from_str(&static_json).ok()?;
     let metric_body: Value = if metric_json.is_empty() {
@@ -157,14 +158,14 @@ fn parse_amd_smi_json(static_body: &Value, metric_body: &Value) -> Option<GpuHos
     Some(aggregate_gpu_devices(devices, None, "amd-smi"))
 }
 
-fn probe_amd_smi_monitor_csv() -> Option<GpuHostStatus> {
-    let text = run_command("amd-smi", &["monitor", "-putmv", "--csv"])?;
+fn probe_amd_smi_monitor_csv(amd_smi: &Path) -> Option<GpuHostStatus> {
+    let text = run_command(amd_smi, &["monitor", "-putmv", "--csv"])?;
     parse_amd_monitor_csv(&text, "amd-smi")
 }
 
-pub fn probe_rocm_smi() -> Option<GpuHostStatus> {
+pub fn probe_rocm_smi(rocm_smi: &Path) -> Option<GpuHostStatus> {
     let text = run_command(
-        "rocm-smi",
+        rocm_smi,
         &[
             "--showproductname",
             "--showuse",
@@ -174,10 +175,10 @@ pub fn probe_rocm_smi() -> Option<GpuHostStatus> {
             "--csv",
         ],
     )?;
-    parse_rocm_smi_csv(&text)
+    parse_rocm_smi_csv(rocm_smi, &text)
 }
 
-fn parse_rocm_smi_csv(text: &str) -> Option<GpuHostStatus> {
+fn parse_rocm_smi_csv(rocm_smi: &Path, text: &str) -> Option<GpuHostStatus> {
     let mut devices = Vec::new();
     let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
 
@@ -228,7 +229,7 @@ fn parse_rocm_smi_csv(text: &str) -> Option<GpuHostStatus> {
         return None;
     }
 
-    if let Some(mem_text) = run_command("rocm-smi", &["--showmeminfo", "vram", "--csv"]) {
+    if let Some(mem_text) = run_command(rocm_smi, &["--showmeminfo", "vram", "--csv"]) {
         enrich_rocm_memory(&mut devices, &mem_text);
     }
 
@@ -310,13 +311,14 @@ fn parse_amd_monitor_csv(text: &str, source: &str) -> Option<GpuHostStatus> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn parse_rocm_smi_sample() {
         let text = "card, gpu use (%), memory use (%), temperature, power, product name\n\
                     0, 45, 30, 62, 120, AMD Radeon RX 7900 XTX\n\
                     1, 10, 5, 55, 80, AMD Radeon RX 7900 XTX";
-        let status = parse_rocm_smi_csv(text).expect("parsed");
+        let status = parse_rocm_smi_csv(Path::new("rocm-smi"), text).expect("parsed");
         assert_eq!(status.device_count, Some(2));
         assert_eq!(status.producer.as_deref(), Some("AMD"));
         assert_eq!(status.source.as_deref(), Some("rocm-smi"));

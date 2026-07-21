@@ -266,6 +266,9 @@ pub struct ClientConfig {
     pub llm_url: Option<String>,
     #[serde(default)]
     pub llm_servers: Vec<LlmServerEntry>,
+    /// Model names excluded from `/api/tags`, `/v1/models`, and cluster/swarm advertisement.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden_models: Vec<String>,
     #[serde(default = "default_auto_approve_run_model_request")]
     pub auto_approve_run_model_request: bool,
     #[serde(default = "default_auto_approve_inference_connections")]
@@ -273,7 +276,7 @@ pub struct ClientConfig {
     #[serde(default)]
     pub allow_unattested_peers: bool,
     /// Accept self-signed / invalid TLS for local LLM backends (e.g. inference-cell).
-    #[serde(default)]
+    #[serde(default = "default_ollama_tls_insecure")]
     pub ollama_tls_insecure: bool,
     /// Default Ollama `options.num_predict` cap (overrides env `MTRXAI_DEFAULT_NUM_PREDICT` when set).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -333,6 +336,10 @@ fn default_auto_approve_inference_connections() -> bool {
     true
 }
 
+fn default_ollama_tls_insecure() -> bool {
+    true
+}
+
 fn default_lobby_host() -> String {
     "127.0.0.1:8080".to_string()
 }
@@ -352,10 +359,11 @@ impl Default for ClientConfig {
             llm_backend: None,
             llm_url: None,
             llm_servers: Vec::new(),
+            hidden_models: Vec::new(),
             auto_approve_run_model_request: default_auto_approve_run_model_request(),
             auto_approve_inference_connections: default_auto_approve_inference_connections(),
             allow_unattested_peers: false,
-            ollama_tls_insecure: false,
+            ollama_tls_insecure: default_ollama_tls_insecure(),
             default_num_predict: None,
             default_num_ctx: None,
             proxy_token: None,
@@ -475,10 +483,11 @@ pub fn load_client_config() -> ClientConfig {
                 llm_backend: Some("ollama".to_string()),
                 llm_url: Some("http://127.0.0.1:11434".to_string()),
                 llm_servers: Vec::new(),
+                hidden_models: Vec::new(),
                 auto_approve_run_model_request: default_auto_approve_run_model_request(),
                 auto_approve_inference_connections: default_auto_approve_inference_connections(),
                 allow_unattested_peers: false,
-                ollama_tls_insecure: false,
+                ollama_tls_insecure: default_ollama_tls_insecure(),
                 default_num_predict: None,
                 default_num_ctx: None,
                 proxy_token: None,

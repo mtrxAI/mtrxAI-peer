@@ -1,6 +1,9 @@
+mod alias;
+
 use axum::{
     extract::{Path, Query, State},
     http::{header, StatusCode},
+    middleware,
     response::{Html, IntoResponse},
     routing::{delete, get, patch, post, put},
     Json, Router,
@@ -129,6 +132,8 @@ pub fn router(state: ProxyState) -> Router {
         .route("/api/client/models/hf-catalog/quants", get(get_hf_model_quants))
         .route("/api/client/models/request", post(post_model_request))
         .route("/api/client/models/run-local", post(post_model_run_local))
+        .route("/api/client/models/visibility", patch(patch_model_visibility))
+        .route("/api/client/models/visibility/bulk", post(post_model_visibility_bulk))
         .route("/api/client/models/:name/load", post(load_local_model))
         .route("/api/client/models/:name/unload", post(unload_local_model))
         .route("/api/client/models/:name", delete(delete_local_model))
@@ -145,6 +150,8 @@ pub fn router(state: ProxyState) -> Router {
         .route("/api/client/transactions/stats", get(get_transaction_stats))
         .route("/assets/logo.svg", get(logo_asset))
         .route("/", get(index_page))
+        // Prefer `/api/peer/*` going forward; `/api/client/*` remains for the embedded UI.
+        .layer(middleware::from_fn(alias::alias_api_peer_to_client))
         .with_state(state)
 }
 
@@ -1393,6 +1400,7 @@ struct StatusResponse {
     local_model_collisions: Vec<ModelCollision>,
     local_models: Vec<Value>,
     network_models: Vec<Value>,
+    hidden_models: Vec<String>,
     gpu_host: Option<crate::shared::GpuHostStatus>,
     gpu_history: crate::shared::GpuHistory,
     connections: ConnectionsView,
@@ -1536,6 +1544,7 @@ async fn get_status(State(state): State<ProxyState>) -> Json<StatusResponse> {
         local_model_collisions,
         local_models,
         network_models,
+        hidden_models: cfg.hidden_models.clone(),
         gpu_host,
         gpu_history,
         connections: ConnectionsView {
@@ -2069,6 +2078,92 @@ async fn unload_local_model(
     Path(name): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     local_model_action(&state, &name, LocalModelAction::Unload).await
+}
+
+#[derive(Deserialize)]
+struct ModelVisibilityBody {
+    name: String,
+    visible: bool,
+}
+
+#[derive(Deserialize)]
+struct ModelVisibilityBulkBody {
+    visible: bool,
+}
+
+#[derive(Serialize)]
+struct ModelVisibilityResponse {
+    hidden_models: Vec<String>,
+}
+
+fn set_model_hidden(hidden: &mut Vec<String>, name: &str, hide: bool) {
+    let name = name.trim();
+    if name.is_empty() {
+        return;
+    }
+    if hide {
+        if !hidden.iter().any(|n| n == name) {
+            hidden.push(name.to_string());
+        }
+    } else {
+        hidden.retain(|n| n != name);
+    }
+}
+
+fn collect_unified_model_names(state: &crate::shared::AppState) -> Vec<String> {
+    use std::collections::BTreeSet;
+    let mut names = BTreeSet::new();
+    for m in &state.local_models_full {
+        if let Some(n) = m.get("name").and_then(|v| v.as_str()) {
+            if !n.is_empty() {
+                names.insert(n.to_string());
+            }
+        }
+    }
+    for m in &state.network_models {
+        if let Some(n) = m.get("name").and_then(|v| v.as_str()) {
+            if !n.is_empty() {
+                names.insert(n.to_string());
+            }
+        }
+    }
+    names.into_iter().collect()
+}
+
+async fn patch_model_visibility(
+    State(state): State<ProxyState>,
+    Json(body): Json<ModelVisibilityBody>,
+) -> Result<Json<ModelVisibilityResponse>, (StatusCode, String)> {
+    let name = body.name.trim().to_string();
+    if name.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "name is required".to_string()));
+    }
+    let mut cfg = state.client_config.write().await;
+    set_model_hidden(&mut cfg.hidden_models, &name, !body.visible);
+    save_client_config(&cfg).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(ModelVisibilityResponse {
+        hidden_models: cfg.hidden_models.clone(),
+    }))
+}
+
+async fn post_model_visibility_bulk(
+    State(state): State<ProxyState>,
+    Json(body): Json<ModelVisibilityBulkBody>,
+) -> Result<Json<ModelVisibilityResponse>, (StatusCode, String)> {
+    let catalog_names = {
+        let app = state.shared_state.lock().await;
+        collect_unified_model_names(&app)
+    };
+    let mut cfg = state.client_config.write().await;
+    if body.visible {
+        cfg.hidden_models.clear();
+    } else {
+        cfg.hidden_models = catalog_names;
+    }
+    save_client_config(&cfg).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(ModelVisibilityResponse {
+        hidden_models: cfg.hidden_models.clone(),
+    }))
 }
 
 enum LocalModelAction {

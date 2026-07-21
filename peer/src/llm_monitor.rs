@@ -19,41 +19,54 @@ pub fn spawn_llm_monitor(proxy_state: ProxyState, _client_config: Arc<RwLock<Cli
                 continue;
             }
 
+            let snapshot = proxy_state
+                .llm_registry
+                .inner
+                .probe_attached_connectivity()
+                .await;
+
+            let was_ready = proxy_state.llm_ready.load(Ordering::Relaxed);
+            proxy_state
+                .llm_ready
+                .store(snapshot.any_connected, Ordering::Relaxed);
+
+            if !snapshot.changed && was_ready == snapshot.any_connected {
+                continue;
+            }
+
+            for id in &snapshot.newly_disconnected {
+                eprintln!("⚠️ LLM server disconnected: {id}");
+            }
+            for id in &snapshot.newly_connected {
+                println!("✅ LLM server connected: {id}");
+            }
+
+            // Force cluster/swarm re-advertise so peers drop stale models promptly.
+            proxy_state.bump_cluster_state();
+
             match proxy_state
                 .llm_registry
                 .inner
-                .health_check_attached()
+                .rebuild_catalog(gpu_probe_mode())
                 .await
             {
-                Ok(()) => {
-                    let was_ready = proxy_state.llm_ready.load(Ordering::Relaxed);
-                    proxy_state.llm_ready.store(true, Ordering::Relaxed);
-                    if !was_ready {
-                        match proxy_state
-                            .llm_registry
-                            .inner
-                            .rebuild_catalog(gpu_probe_mode())
-                            .await
-                        {
-                            Ok(catalog) => {
-                                let mut st = proxy_state.shared_state.lock().await;
-                                st.local_models = catalog.model_names.clone();
-                                st.local_models_full = catalog.models.clone();
-                                st.last_gpu_host = catalog.gpu_host.clone();
-                                st.local_model_collisions = catalog.collisions.clone();
-                                drop(st);
-                                let _ = proxy_state.cluster_notify_tx.send(()).await;
-                                let _ = proxy_state.swarm_notify_tx.send(()).await;
-                                println!("✅ LLM server(s) reconnected");
-                            }
-                            Err(e) => {
-                                eprintln!("⚠️ Failed to rebuild LLM catalog after reconnect: {e}");
-                            }
-                        }
+                Ok(catalog) => {
+                    let mut st = proxy_state.shared_state.lock().await;
+                    st.local_models = catalog.model_names.clone();
+                    st.local_models_full = catalog.models.clone();
+                    st.last_gpu_host = catalog.gpu_host.clone();
+                    st.local_model_collisions = catalog.collisions.clone();
+                    drop(st);
+                    let _ = proxy_state.cluster_notify_tx.send(()).await;
+                    let _ = proxy_state.swarm_notify_tx.send(()).await;
+                    if snapshot.any_connected && !was_ready {
+                        println!("✅ LLM server(s) reconnected");
+                    } else if !snapshot.any_connected {
+                        println!("⚠️ All attached LLM servers are disconnected — cleared local catalog");
                     }
                 }
-                Err(_) => {
-                    proxy_state.llm_ready.store(false, Ordering::Relaxed);
+                Err(e) => {
+                    eprintln!("⚠️ Failed to rebuild LLM catalog after connectivity change: {e}");
                 }
             }
         }

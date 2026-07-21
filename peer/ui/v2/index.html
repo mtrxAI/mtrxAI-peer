@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- Shared UI source: mtrxAI-common/ui (tokens.css, formatters.js, logo.svg). Keep local :root tokens and Alpine fmtGpu/locationLine in sync; logo served from ui/assets/logo.svg via include_bytes!. -->
 <html lang="en" class="h-full bg-slate-950">
 <head>
   <meta charset="UTF-8" />
@@ -972,66 +973,90 @@
               <strong class="ml-1 text-slate-100" x-text="(status.connections?.inbound_count ?? 0) + ' · ' + (status.connections?.outbound_count ?? 0)"></strong>
             </span>
           </div>
-          <div class="relative" x-data="{ netMenuOpen: false }">
-            <button type="button" @click="netMenuOpen = !netMenuOpen" @click.outside="netMenuOpen = false"
+          <div class="relative" x-data="{ menuOpen: false }"
+            @click.outside="
+              // Keep open while a time input is focused (native picker UI lives outside the DOM).
+              setTimeout(() => {
+                if ($el.contains(document.activeElement)) return;
+                menuOpen = false;
+              }, 0);
+            ">
+            <button type="button" @click="menuOpen = !menuOpen"
               class="btn-icon btn-icon-ghost border border-slate-700"
               :class="settings.defaultScheduleEnabled ? 'text-blue-400 border-blue-500/40' : ''"
-              title="Network controls">
-              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5.636 5.636a9 9 0 010 12.728m0 0l-3.536 3.536M5.636 5.636l3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+              title="Quick actions">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM12.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM18.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0z"/></svg>
             </button>
-            <div x-show="netMenuOpen" x-transition
-              class="absolute right-0 mt-2 w-64 rounded-md border border-slate-700 bg-slate-900 py-2 shadow-lg z-20">
+            <div x-show="menuOpen" x-transition @click.stop
+              class="absolute right-0 mt-2 w-80 rounded-md border border-slate-700 bg-slate-900 py-2 shadow-lg z-20">
               <div class="px-4 py-2 space-y-2 border-b border-slate-800">
                 <div class="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
                   <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                  Daily connection schedule
+                  Daily online hours
                 </div>
-                <label class="flex items-center gap-2 text-sm text-slate-300">
-                  <input type="checkbox" class="rounded border-slate-600 bg-slate-800"
+                <p class="text-xs text-slate-500 leading-snug">Only keep clusters &amp; swarms connected during this time window each day.</p>
+                <label class="flex items-start gap-2 text-sm text-slate-300">
+                  <input type="checkbox" class="mt-0.5 rounded border-slate-600 bg-slate-800"
                     :checked="settings.defaultScheduleEnabled"
                     @change="settings.defaultScheduleEnabled = $event.target.checked; saveScheduleDefaults()" />
-                  Enable for all clusters & swarms
+                  <span>Limit connections to a daily time window</span>
                 </label>
                 <div x-show="settings.defaultScheduleEnabled" class="flex flex-wrap items-center gap-2 text-sm">
                   <input type="time" x-model="settings.defaultScheduleStart" @change="saveScheduleDefaults()"
+                    @click.stop
                     class="rounded-md bg-slate-950 border border-slate-700 px-2 py-1 text-slate-200" />
                   <span class="text-slate-500">to</span>
                   <input type="time" x-model="settings.defaultScheduleEnd" @change="saveScheduleDefaults()"
+                    @click.stop
                     class="rounded-md bg-slate-950 border border-slate-700 px-2 py-1 text-slate-200" />
                 </div>
                 <p x-show="settings.defaultScheduleEnabled" class="text-xs text-slate-500" x-text="globalScheduleStatusText()"></p>
               </div>
-              <button @click="networkDisconnectAll(); netMenuOpen = false"
-                class="flex w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-slate-800">Disconnect all</button>
-              <button @click="networkConnectAll(); netMenuOpen = false"
-                class="flex w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-slate-800">Reconnect all</button>
-              <button @click="networkPauseAll(true); netMenuOpen = false"
-                class="flex w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-slate-800">Pause all jobs</button>
-              <button @click="networkPauseAll(false); netMenuOpen = false"
-                class="flex w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-slate-800">Resume all jobs</button>
-            </div>
-          </div>
-          <div class="relative" x-data="{ menuOpen: false }">
-            <button type="button" @click="menuOpen = !menuOpen" @click.outside="menuOpen = false"
-              class="btn-icon btn-icon-ghost border border-slate-700" title="Quick actions">
-              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM12.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM18.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0z"/></svg>
-            </button>
-            <div x-show="menuOpen" x-transition
-              class="absolute right-0 mt-2 w-52 rounded-md border border-slate-700 bg-slate-900 py-1 shadow-lg">
+              <div class="border-b border-slate-800 py-1">
+                <button @click="networkDisconnectAll(); menuOpen = false"
+                  class="flex w-full flex-col gap-0.5 px-4 py-2 text-left hover:bg-slate-800">
+                  <span class="text-sm text-slate-200">Disconnect from all networks</span>
+                  <span class="text-xs text-slate-500">Drop every cluster and swarm connection now</span>
+                </button>
+                <button @click="networkConnectAll(); menuOpen = false"
+                  class="flex w-full flex-col gap-0.5 px-4 py-2 text-left hover:bg-slate-800">
+                  <span class="text-sm text-slate-200">Reconnect to all networks</span>
+                  <span class="text-xs text-slate-500">Restore connections to all clusters and swarms</span>
+                </button>
+                <button @click="networkPauseAll(true); menuOpen = false"
+                  class="flex w-full flex-col gap-0.5 px-4 py-2 text-left hover:bg-slate-800">
+                  <span class="text-sm text-slate-200">Pause all remote jobs</span>
+                  <span class="text-xs text-slate-500">Stop running jobs across clusters and swarms</span>
+                </button>
+                <button @click="networkPauseAll(false); menuOpen = false"
+                  class="flex w-full flex-col gap-0.5 px-4 py-2 text-left hover:bg-slate-800">
+                  <span class="text-sm text-slate-200">Resume all remote jobs</span>
+                  <span class="text-xs text-slate-500">Allow jobs to run again on the network</span>
+                </button>
+              </div>
               <button @click="openAddServerModal(); menuOpen = false"
-                class="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-300 hover:bg-slate-800" title="Add LLM server">
-                <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-                Add LLM server
+                class="flex w-full items-start gap-2 px-4 py-2 text-left hover:bg-slate-800">
+                <svg class="mt-0.5 h-4 w-4 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                <span class="flex flex-col gap-0.5">
+                  <span class="text-sm text-slate-200">Add LLM server</span>
+                  <span class="text-xs text-slate-500">Register a local or remote model server</span>
+                </span>
               </button>
               <button @click="settingsPanel.open = true; menuOpen = false"
-                class="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-300 hover:bg-slate-800" title="Settings">
-                <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                Settings
+                class="flex w-full items-start gap-2 px-4 py-2 text-left hover:bg-slate-800">
+                <svg class="mt-0.5 h-4 w-4 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span class="flex flex-col gap-0.5">
+                  <span class="text-sm text-slate-200">Peer settings</span>
+                  <span class="text-xs text-slate-500">Open connection, GPU, and preference options</span>
+                </span>
               </button>
               <button @click="refreshStatus(); menuOpen = false"
-                class="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-300 hover:bg-slate-800" title="Refresh status">
-                <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
-                Refresh status
+                class="flex w-full items-start gap-2 px-4 py-2 text-left hover:bg-slate-800">
+                <svg class="mt-0.5 h-4 w-4 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+                <span class="flex flex-col gap-0.5">
+                  <span class="text-sm text-slate-200">Refresh dashboard</span>
+                  <span class="text-xs text-slate-500">Reload live status, peers, and model info</span>
+                </span>
               </button>
             </div>
           </div>
@@ -1187,7 +1212,8 @@
               </button>
             </div>
             <p x-show="status.attached_server_count > 0" class="text-sm text-slate-400">
-              <span x-text="status.attached_server_count"></span> server(s) attached to this peer
+              <span x-text="status.attached_server_count"></span> server(s) attached ·
+              <span x-text="connectedServerCount()"></span> connected
             </p>
 
             <div x-show="(status.llm_servers?.length ?? 0) > 0" class="overflow-hidden rounded-lg border border-slate-800">
@@ -1225,9 +1251,10 @@
                       </td>
                       <td class="px-4 py-3">
                         <div class="flex flex-wrap items-center gap-1.5">
-                          <span x-show="srv.attached" class="rounded bg-green-900/40 px-1.5 py-0.5 text-[10px] font-medium text-green-300">attached</span>
+                          <span x-show="srv.attached && srv.connected" class="rounded bg-green-900/40 px-1.5 py-0.5 text-[10px] font-medium text-green-300">connected</span>
+                          <span x-show="srv.attached && !srv.connected" class="rounded bg-red-900/40 px-1.5 py-0.5 text-[10px] font-medium text-red-300" title="Attached but LLM server is unreachable">disconnected</span>
                           <span x-show="srv.attached && !srv.advertise_to_cluster" class="rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium text-amber-200" title="Not advertised to clusters">local only</span>
-                          <span x-show="!srv.attached" class="text-xs text-slate-500">detached</span>
+                          <span x-show="!srv.attached" class="text-xs text-slate-500">not attached</span>
                         </div>
                       </td>
                       <td class="px-4 py-3 text-slate-400 tabular-nums" x-text="srv.model_count ?? 0"></td>
@@ -1248,7 +1275,7 @@
                             <svg x-show="!srv.advertise_to_cluster" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                           </button>
                           <button x-show="srv.attached" @click="detachServer(srv.id)"
-                            class="btn-icon btn-icon-warn" title="Detach server (disconnect)">
+                            class="btn-icon btn-icon-warn" title="Detach server (stop using)">
                             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"/></svg>
                           </button>
                           <button @click="removeServer(srv.id)"
@@ -1368,240 +1395,94 @@
                 <h3 class="font-medium">Models</h3>
                 <p class="text-xs text-slate-500 mt-0.5">
                   <span x-text="uniqueModelCount()"></span> unique ·
-                  <span x-text="modelsLocalModelCount()"></span> local ·
-                  <span x-text="modelsClusterModelCount()"></span> in clusters ·
-                  <span x-text="modelsSwarmModelCount()"></span> in swarms
+                  <span x-text="modelsVisibleCount()"></span> shown ·
+                  <span x-text="modelsHiddenCount()"></span> hidden
                 </p>
               </div>
-            </div>
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <input type="search" x-model="modelsSearchQuery" @input="expandModelGroupsMatchingSearch()"
-                placeholder="Search models…"
-                class="min-w-0 flex-1 rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/40" />
               <div class="flex flex-wrap gap-1.5 shrink-0">
-                <button type="button" @click="modelsSectionFilter = 'all'"
-                  :class="modelsSectionFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'"
-                  class="rounded-md px-2.5 py-1 text-xs font-medium transition">All</button>
-                <button type="button" @click="modelsSectionFilter = 'local'"
-                  :class="modelsSectionFilter === 'local' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'"
-                  class="rounded-md px-2.5 py-1 text-xs font-medium transition">Servers</button>
-                <button type="button" @click="modelsSectionFilter = 'cluster'"
-                  :class="modelsSectionFilter === 'cluster' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'"
-                  class="rounded-md px-2.5 py-1 text-xs font-medium transition">Clusters</button>
-                <button type="button" @click="modelsSectionFilter = 'swarm'"
-                  :class="modelsSectionFilter === 'swarm' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'"
-                  class="rounded-md px-2.5 py-1 text-xs font-medium transition">Swarms</button>
+                <button type="button" @click="setAllModelsVisibility(true)"
+                  class="rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-slate-100 transition">Show all</button>
+                <button type="button" @click="setAllModelsVisibility(false)"
+                  class="rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-slate-100 transition">Hide all</button>
               </div>
             </div>
+            <input type="search" x-model="modelsSearchQuery"
+              placeholder="Search models…"
+              class="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/40" />
           </div>
 
-          <!-- LLM Servers section -->
-          <div x-show="modelsShowSection('local')" class="rounded-lg border border-slate-800 bg-slate-900/80 p-4 space-y-3">
-            <button type="button" @click="toggleModelGroup('section', 'local')"
-              class="flex w-full items-center gap-2 text-left">
-              <svg class="h-4 w-4 shrink-0 text-slate-400 transition-transform" :class="isModelGroupExpanded('section', 'local') ? 'rotate-90' : ''"
-                fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-              </svg>
-              <h3 class="font-medium">LLM Servers</h3>
-              <span class="text-xs text-slate-500" x-text="'(' + modelsLocalSections().length + ' server' + (modelsLocalSections().length === 1 ? '' : 's') + ' · ' + modelsLocalModelCount() + ' models)'"></span>
-            </button>
-            <div x-show="isModelGroupExpanded('section', 'local')" class="space-y-3">
-              <template x-for="sec in modelsLocalSections()" :key="'local-' + sec.id">
-                <div class="rounded-lg bg-slate-800/50 px-3 py-2 space-y-2">
-                  <button type="button" @click="toggleModelGroup('local', sec.id)"
-                    class="flex w-full items-center gap-2 text-left text-sm">
-                    <svg class="h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform" :class="isModelGroupExpanded('local', sec.id) ? 'rotate-90' : ''"
-                      fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                    </svg>
-                    <span class="font-medium capitalize min-w-0 truncate" x-text="sec.label"></span>
-                    <span class="text-xs text-slate-500 shrink-0" x-text="sec.models.length + ' model' + (sec.models.length === 1 ? '' : 's')"></span>
-                  </button>
-                  <ul x-show="isModelGroupExpanded('local', sec.id)" class="space-y-1">
-                    <template x-for="m in sec.models" :key="'local-' + sec.id + '-' + m.name">
-                      <li class="rounded-lg bg-slate-900/60 overflow-hidden">
-                        <div class="flex justify-between items-center gap-2 px-3 py-2">
-                          <button type="button" @click="toggleModelDetail('local', sec.id, m.name)"
-                            class="min-w-0 flex items-center gap-1.5 text-left flex-1">
-                            <svg class="h-3 w-3 shrink-0 text-slate-500 transition-transform" :class="isModelDetailExpanded('local', sec.id, m.name) ? 'rotate-90' : ''"
-                              fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                              <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                            </svg>
-                            <span class="min-w-0 break-all text-xs" :class="m._status?.loaded ? 'text-emerald-400' : ''" x-text="m.name"></span>
-                            <span x-show="modelRuntimeBadge(m)" class="rounded bg-slate-800 px-1 py-0.5 text-[10px] shrink-0"
-                              :class="modelRuntimeBadgeClass(m)" x-text="modelRuntimeBadge(m)"></span>
-                            <span x-show="modelCapabilityBadge(m)" class="rounded bg-slate-800 px-1 py-0.5 text-[10px] text-slate-300 shrink-0" x-text="modelCapabilityBadge(m)"></span>
+          <div class="rounded-lg border border-slate-800 bg-slate-900/80 p-4 space-y-2">
+            <ul class="space-y-1">
+              <template x-for="entry in unifiedModelsList()" :key="'model-' + entry.name">
+                <li class="rounded-lg bg-slate-800/50 overflow-hidden" :class="entry.visible ? '' : 'opacity-60'">
+                  <div class="flex justify-between items-center gap-2 px-3 py-2">
+                    <button type="button" @click="toggleModelDetail('unified', 'all', entry.name)"
+                      class="min-w-0 flex items-center gap-1.5 text-left flex-1">
+                      <svg class="h-3 w-3 shrink-0 text-slate-500 transition-transform" :class="isModelDetailExpanded('unified', 'all', entry.name) ? 'rotate-90' : ''"
+                        fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                      </svg>
+                      <span class="min-w-0 break-all text-xs" :class="entry.localModel?._status?.loaded ? 'text-emerald-400' : 'text-slate-200'" x-text="entry.name"></span>
+                      <span x-show="!entry.visible" class="rounded bg-slate-700 px-1 py-0.5 text-[10px] text-slate-300 shrink-0">Hidden</span>
+                      <span x-show="modelRuntimeBadge(entry.model)" class="rounded bg-slate-800 px-1 py-0.5 text-[10px] shrink-0"
+                        :class="modelRuntimeBadgeClass(entry.model)" x-text="modelRuntimeBadge(entry.model)"></span>
+                      <span x-show="modelCapabilityBadge(entry.model)" class="rounded bg-slate-800 px-1 py-0.5 text-[10px] text-slate-300 shrink-0" x-text="modelCapabilityBadge(entry.model)"></span>
+                    </button>
+                    <div class="flex items-center gap-1 shrink-0">
+                      <template x-for="chip in entry.originChips" :key="entry.name + '-' + chip.kind + '-' + chip.id">
+                        <span class="rounded bg-slate-900/80 px-1.5 py-0.5 text-[10px] text-slate-300 max-w-[9rem] truncate" :title="chip.label" x-text="chip.short"></span>
+                      </template>
+                      <button type="button" @click="setModelVisibility(entry.name, !entry.visible)"
+                        :title="entry.visible ? 'Hide from proxy & advertise' : 'Show in proxy & advertise'"
+                        class="rounded p-1 text-slate-400 hover:bg-slate-700/60 hover:text-slate-200">
+                        <svg x-show="entry.visible" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <svg x-show="!entry.visible" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                        </svg>
+                      </button>
+                      <template x-if="entry.localModel && (entry.localModel._source_kind === 'ollama' || entry.localModel._source_kind === 'inference-cell')">
+                        <div class="flex items-center gap-0.5">
+                          <button x-show="!entry.localModel._status?.loaded && modelSupportsLoad(entry.localModel)" type="button" @click="loadLocalModel(entry.localModel)"
+                            :disabled="modelAction.name === entry.name"
+                            class="rounded p-1 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40" title="Load">
+                            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z"/></svg>
                           </button>
-                          <div class="flex items-center gap-1 shrink-0">
-                            <span x-show="m._source_kind" class="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] capitalize text-slate-300" x-text="m._source_kind"></span>
-                            <template x-if="m._source_kind === 'ollama' || m._source_kind === 'inference-cell'">
-                              <div class="flex items-center gap-0.5">
-                                <button x-show="!m._status?.loaded && modelSupportsLoad(m)" type="button" @click="loadLocalModel(m)"
-                                  :disabled="modelAction.name === m.name"
-                                  class="rounded p-1 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40" title="Load">
-                                  <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z"/></svg>
-                                </button>
-                                <button x-show="m._status?.loaded && modelSupportsLoad(m)" type="button" @click="unloadLocalModel(m)"
-                                  :disabled="modelAction.name === m.name"
-                                  class="rounded p-1 text-amber-400 hover:bg-amber-500/20 disabled:opacity-40" title="Unload">
-                                  <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z"/></svg>
-                                </button>
-                                <button type="button" @click="deleteLocalModel(m)" :disabled="modelAction.name === m.name"
-                                  class="rounded p-1 text-red-400 hover:bg-red-500/20 disabled:opacity-40" title="Delete">
-                                  <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
-                                </button>
-                              </div>
-                            </template>
-                          </div>
-                        </div>
-                        <div x-show="isModelDetailExpanded('local', sec.id, m.name)" class="border-t border-slate-700/60 px-3 py-2 space-y-2">
-                          <dl class="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
-                            <template x-for="row in modelDetailRows(m, { server: sec.server })" :key="row.label">
-                              <div class="contents">
-                                <dt class="text-slate-500" x-text="row.label"></dt>
-                                <dd class="text-slate-200 break-all" x-text="row.value"></dd>
-                              </div>
-                            </template>
-                          </dl>
-                          <button type="button" @click="toggleModelRaw('local', sec.id, m.name)"
-                            class="text-[10px] text-slate-500 hover:text-slate-300" x-text="isModelRawExpanded('local', sec.id, m.name) ? 'Hide raw JSON' : 'Show raw JSON'"></button>
-                          <pre x-show="isModelRawExpanded('local', sec.id, m.name)" class="max-h-48 overflow-auto rounded bg-slate-950 p-2 text-[10px] text-slate-400 font-mono" x-text="JSON.stringify(m, null, 2)"></pre>
-                        </div>
-                      </li>
-                    </template>
-                    <li x-show="!sec.models.length" class="text-slate-500 text-xs py-1 px-3">No models match</li>
-                  </ul>
-                </div>
-              </template>
-              <p x-show="!modelsLocalSections().length" class="text-slate-500 text-sm">No attached LLM servers with models. Attach a server from the LLM Servers tab.</p>
-            </div>
-          </div>
-
-          <!-- Clusters section -->
-          <div x-show="modelsShowSection('cluster')" class="rounded-lg border border-slate-800 bg-slate-900/80 p-4 space-y-3">
-            <button type="button" @click="toggleModelGroup('section', 'cluster')"
-              class="flex w-full items-center gap-2 text-left">
-              <svg class="h-4 w-4 shrink-0 text-slate-400 transition-transform" :class="isModelGroupExpanded('section', 'cluster') ? 'rotate-90' : ''"
-                fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-              </svg>
-              <h3 class="font-medium">Clusters</h3>
-              <span class="text-xs text-slate-500" x-text="'(' + modelsClusterSections().length + ' cluster' + (modelsClusterSections().length === 1 ? '' : 's') + ' · ' + modelsClusterModelCount() + ' models)'"></span>
-            </button>
-            <div x-show="isModelGroupExpanded('section', 'cluster')" class="space-y-3">
-              <template x-for="sec in modelsClusterSections()" :key="'cluster-' + sec.id">
-                <div class="rounded-lg bg-slate-800/50 px-3 py-2 space-y-2">
-                  <button type="button" @click="toggleModelGroup('cluster', sec.id)"
-                    class="flex w-full items-center gap-2 text-left text-sm">
-                    <svg class="h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform" :class="isModelGroupExpanded('cluster', sec.id) ? 'rotate-90' : ''"
-                      fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                    </svg>
-                    <span class="font-medium min-w-0 truncate" x-text="sec.label"></span>
-                    <span class="font-mono text-[10px] text-slate-500 shrink-0" x-text="sec.id?.slice(0, 8)"></span>
-                    <span class="text-xs text-slate-500 shrink-0 ml-auto" x-text="sec.models.length + ' model' + (sec.models.length === 1 ? '' : 's')"></span>
-                  </button>
-                  <ul x-show="isModelGroupExpanded('cluster', sec.id)" class="space-y-1">
-                    <template x-for="m in sec.models" :key="'cluster-' + sec.id + '-' + m.name">
-                      <li class="rounded-lg bg-slate-900/60 overflow-hidden">
-                        <div class="flex justify-between items-center gap-2 px-3 py-2">
-                          <button type="button" @click="toggleModelDetail('cluster', sec.id, m.name)"
-                            class="min-w-0 flex items-center gap-1.5 text-left flex-1">
-                            <svg class="h-3 w-3 shrink-0 text-slate-500 transition-transform" :class="isModelDetailExpanded('cluster', sec.id, m.name) ? 'rotate-90' : ''"
-                              fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                              <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                            </svg>
-                            <span class="min-w-0 break-all text-xs" x-text="m.name"></span>
-                            <span x-show="modelRuntimeBadge(m)" class="rounded bg-slate-800 px-1 py-0.5 text-[10px] shrink-0"
-                              :class="modelRuntimeBadgeClass(m)" x-text="modelRuntimeBadge(m)"></span>
+                          <button x-show="entry.localModel._status?.loaded && modelSupportsLoad(entry.localModel)" type="button" @click="unloadLocalModel(entry.localModel)"
+                            :disabled="modelAction.name === entry.name"
+                            class="rounded p-1 text-amber-400 hover:bg-amber-500/20 disabled:opacity-40" title="Unload">
+                            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z"/></svg>
                           </button>
-                          <span class="text-slate-500 text-[10px] shrink-0" x-text="modelPeerSummary(m)"></span>
-                        </div>
-                        <div x-show="isModelDetailExpanded('cluster', sec.id, m.name)" class="border-t border-slate-700/60 px-3 py-2 space-y-2">
-                          <dl class="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
-                            <template x-for="row in modelDetailRows(m, { clusterId: sec.id })" :key="row.label">
-                              <div class="contents">
-                                <dt class="text-slate-500" x-text="row.label"></dt>
-                                <dd class="text-slate-200 break-all" x-text="row.value"></dd>
-                              </div>
-                            </template>
-                          </dl>
-                          <button type="button" @click="toggleModelRaw('cluster', sec.id, m.name)"
-                            class="text-[10px] text-slate-500 hover:text-slate-300" x-text="isModelRawExpanded('cluster', sec.id, m.name) ? 'Hide raw JSON' : 'Show raw JSON'"></button>
-                          <pre x-show="isModelRawExpanded('cluster', sec.id, m.name)" class="max-h-48 overflow-auto rounded bg-slate-950 p-2 text-[10px] text-slate-400 font-mono" x-text="JSON.stringify(m, null, 2)"></pre>
-                        </div>
-                      </li>
-                    </template>
-                    <li x-show="!sec.models.length" class="text-slate-500 text-xs py-1 px-3">No models match</li>
-                  </ul>
-                </div>
-              </template>
-              <p x-show="!modelsClusterSections().length" class="text-slate-500 text-sm">No clusters configured or no models advertised yet.</p>
-            </div>
-          </div>
-
-          <!-- Swarms section -->
-          <div x-show="modelsShowSection('swarm')" class="rounded-lg border border-slate-800 bg-slate-900/80 p-4 space-y-3">
-            <button type="button" @click="toggleModelGroup('section', 'swarm')"
-              class="flex w-full items-center gap-2 text-left">
-              <svg class="h-4 w-4 shrink-0 text-slate-400 transition-transform" :class="isModelGroupExpanded('section', 'swarm') ? 'rotate-90' : ''"
-                fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-              </svg>
-              <h3 class="font-medium">Swarms</h3>
-              <span class="text-xs text-slate-500" x-text="'(' + modelsSwarmSections().length + ' swarm' + (modelsSwarmSections().length === 1 ? '' : 's') + ' · ' + modelsSwarmModelCount() + ' models)'"></span>
-            </button>
-            <div x-show="isModelGroupExpanded('section', 'swarm')" class="space-y-3">
-              <template x-for="sec in modelsSwarmSections()" :key="'swarm-' + sec.id">
-                <div class="rounded-lg bg-slate-800/50 px-3 py-2 space-y-2">
-                  <button type="button" @click="toggleModelGroup('swarm', sec.id)"
-                    class="flex w-full items-center gap-2 text-left text-sm">
-                    <svg class="h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform" :class="isModelGroupExpanded('swarm', sec.id) ? 'rotate-90' : ''"
-                      fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                    </svg>
-                    <span class="font-medium min-w-0 truncate" x-text="sec.label"></span>
-                    <span class="font-mono text-[10px] text-slate-500 shrink-0" x-text="sec.id?.slice(0, 8)"></span>
-                    <span class="text-xs text-slate-500 shrink-0 ml-auto" x-text="sec.models.length + ' model' + (sec.models.length === 1 ? '' : 's')"></span>
-                  </button>
-                  <ul x-show="isModelGroupExpanded('swarm', sec.id)" class="space-y-1">
-                    <template x-for="m in sec.models" :key="'swarm-' + sec.id + '-' + m.name">
-                      <li class="rounded-lg bg-slate-900/60 overflow-hidden">
-                        <div class="flex justify-between items-center gap-2 px-3 py-2">
-                          <button type="button" @click="toggleModelDetail('swarm', sec.id, m.name)"
-                            class="min-w-0 flex items-center gap-1.5 text-left flex-1">
-                            <svg class="h-3 w-3 shrink-0 text-slate-500 transition-transform" :class="isModelDetailExpanded('swarm', sec.id, m.name) ? 'rotate-90' : ''"
-                              fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                              <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                            </svg>
-                            <span class="min-w-0 break-all text-xs" x-text="m.name"></span>
-                            <span x-show="modelRuntimeBadge(m)" class="rounded bg-slate-800 px-1 py-0.5 text-[10px] shrink-0"
-                              :class="modelRuntimeBadgeClass(m)" x-text="modelRuntimeBadge(m)"></span>
+                          <button type="button" @click="deleteLocalModel(entry.localModel)" :disabled="modelAction.name === entry.name"
+                            class="rounded p-1 text-red-400 hover:bg-red-500/20 disabled:opacity-40" title="Delete">
+                            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
                           </button>
-                          <span class="text-slate-500 text-[10px] shrink-0" x-text="modelPeerSummary(m)"></span>
                         </div>
-                        <div x-show="isModelDetailExpanded('swarm', sec.id, m.name)" class="border-t border-slate-700/60 px-3 py-2 space-y-2">
-                          <dl class="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
-                            <template x-for="row in modelDetailRows(m, { swarmId: sec.id })" :key="row.label">
-                              <div class="contents">
-                                <dt class="text-slate-500" x-text="row.label"></dt>
-                                <dd class="text-slate-200 break-all" x-text="row.value"></dd>
-                              </div>
-                            </template>
-                          </dl>
-                          <button type="button" @click="toggleModelRaw('swarm', sec.id, m.name)"
-                            class="text-[10px] text-slate-500 hover:text-slate-300" x-text="isModelRawExpanded('swarm', sec.id, m.name) ? 'Hide raw JSON' : 'Show raw JSON'"></button>
-                          <pre x-show="isModelRawExpanded('swarm', sec.id, m.name)" class="max-h-48 overflow-auto rounded bg-slate-950 p-2 text-[10px] text-slate-400 font-mono" x-text="JSON.stringify(m, null, 2)"></pre>
+                      </template>
+                    </div>
+                  </div>
+                  <div x-show="isModelDetailExpanded('unified', 'all', entry.name)" class="border-t border-slate-700/60 px-3 py-2 space-y-2">
+                    <div class="text-[10px] text-slate-400" x-text="'Origins: ' + entry.originSummary"></div>
+                    <dl class="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
+                      <template x-for="row in modelDetailRows(entry.model, { origins: entry.origins })" :key="row.label">
+                        <div class="contents">
+                          <dt class="text-slate-500" x-text="row.label"></dt>
+                          <dd class="text-slate-200 break-all" x-text="row.value"></dd>
                         </div>
-                      </li>
-                    </template>
-                    <li x-show="!sec.models.length" class="text-slate-500 text-xs py-1 px-3">No models match</li>
-                  </ul>
-                </div>
+                      </template>
+                    </dl>
+                    <button type="button" @click="toggleModelRaw('unified', 'all', entry.name)"
+                      class="text-[10px] text-slate-500 hover:text-slate-300" x-text="isModelRawExpanded('unified', 'all', entry.name) ? 'Hide raw JSON' : 'Show raw JSON'"></button>
+                    <pre x-show="isModelRawExpanded('unified', 'all', entry.name)" class="max-h-48 overflow-auto rounded bg-slate-950 p-2 text-[10px] text-slate-400 font-mono" x-text="JSON.stringify({ local: entry.localModel, network: entry.networkModel, origins: entry.origins }, null, 2)"></pre>
+                  </div>
+                </li>
               </template>
-              <p x-show="!modelsSwarmSections().length" class="text-slate-500 text-sm">No swarms configured or no models in swarms yet.</p>
-            </div>
+            </ul>
+            <p x-show="!unifiedModelsList().length" class="text-slate-500 text-sm py-2">
+              No models yet. Attach an LLM server or join a cluster/swarm to see remote models.
+            </p>
           </div>
         </div>
 
@@ -2126,7 +2007,6 @@
         expandedModelDetails: {},
         expandedModelGroups: {},
         expandedModelRaw: {},
-        networkMenuOpen: false,
         openSchedulePopover: null,
         subtitle: 'Loading…',
         publicClusters: [],
@@ -2174,7 +2054,7 @@
           autoApproveRunModelRequest: false,
           autoApproveInferenceConnections: true,
           allowUnattestedPeers: false,
-          ollamaTlsInsecure: false,
+          ollamaTlsInsecure: true,
           defaultNumPredict: '',
           defaultNumCtx: '',
           defaultScheduleEnabled: false,
@@ -2498,41 +2378,8 @@
           this.searchQuery = result.name;
           this.modelsSearchQuery = result.name;
           this.searchDropdownOpen = false;
-          const loc = result.locations[0];
-          if (loc) {
-            const groups = { ...this.expandedModelGroups };
-            groups['section:local'] = true;
-            groups['section:cluster'] = true;
-            groups['section:swarm'] = true;
-            if (loc.kind === 'network') {
-              let detailSet = false;
-              for (const r of this.status.clusters ?? []) {
-                if ((r.network_models ?? []).some((m) => m.name === result.name)) {
-                  groups[`cluster:${r.cluster_id}`] = true;
-                  const key = this.modelDetailKey('cluster', r.cluster_id, result.name);
-                  this.expandedModelDetails = { ...this.expandedModelDetails, [key]: true };
-                  detailSet = true;
-                  break;
-                }
-              }
-              if (!detailSet) {
-                for (const s of this.status.swarms ?? []) {
-                  if ((s.network_models ?? []).some((m) => m.name === result.name)) {
-                    groups[`swarm:${s.swarm_id}`] = true;
-                    const key = this.modelDetailKey('swarm', s.swarm_id, result.name);
-                    this.expandedModelDetails = { ...this.expandedModelDetails, [key]: true };
-                    break;
-                  }
-                }
-              }
-            } else {
-              const scope = loc.kind === 'local' ? 'local' : loc.kind;
-              if (loc.id && loc.id !== 'local') groups[`${scope}:${loc.id}`] = true;
-              const key = this.modelDetailKey(scope, loc.id, result.name);
-              this.expandedModelDetails = { ...this.expandedModelDetails, [key]: true };
-            }
-            this.expandedModelGroups = groups;
-          }
+          const key = this.modelDetailKey('unified', 'all', result.name);
+          this.expandedModelDetails = { ...this.expandedModelDetails, [key]: true };
           this.switchDashboardTab('models');
         },
 
@@ -2578,8 +2425,8 @@
           const end = this.settings.defaultScheduleEnd || '17:00';
           const inside = this.isInsideScheduleWindow(start, end);
           return inside
-            ? `Window active (${start}–${end}) — clusters & swarms stay connected`
-            : `Off-hours (${start}–${end}) — clusters & swarms disconnect until window opens`;
+            ? `Online now (${start}–${end}) — clusters & swarms stay connected`
+            : `Offline hours (${start}–${end}) — clusters & swarms disconnect until the window opens`;
         },
 
         isInsideScheduleWindow(start, end) {
@@ -2699,52 +2546,8 @@
           return this.combinedModelQuery(this.modelsSearchQuery, this.searchQuery);
         },
 
-        modelsShowSection(type) {
-          const f = this.modelsSectionFilter;
-          return f === 'all' || f === type;
-        },
-
         modelDetailKey(scope, scopeId, modelName) {
           return `${scope}:${scopeId}:${modelName}`;
-        },
-
-        isModelGroupExpanded(type, id) {
-          const key = `${type}:${id}`;
-          if (Object.prototype.hasOwnProperty.call(this.expandedModelGroups, key)) {
-            return this.expandedModelGroups[key];
-          }
-          if (type === 'section') return true;
-          const q = this.modelsEffectiveQuery();
-          if (q) return this.modelGroupHasMatch(type, id);
-          return false;
-        },
-
-        modelGroupHasMatch(type, id) {
-          const q = this.modelsEffectiveQuery();
-          if (!q) return false;
-          if (type === 'local') {
-            const models = (this.status.local_models ?? []).filter(
-              (m) => String(m._source_server ?? '') === String(id),
-            );
-            return models.some((m) => this.modelMatchesQuery(m, q));
-          }
-          if (type === 'cluster') {
-            const cluster = (this.status.clusters ?? []).find((r) => r.cluster_id === id);
-            return (cluster?.network_models ?? []).some((m) => this.modelMatchesQuery(m, q));
-          }
-          if (type === 'swarm') {
-            const swarm = (this.status.swarms ?? []).find((r) => r.swarm_id === id);
-            return (swarm?.network_models ?? []).some((m) => this.modelMatchesQuery(m, q));
-          }
-          return false;
-        },
-
-        toggleModelGroup(type, id) {
-          const key = `${type}:${id}`;
-          this.expandedModelGroups = {
-            ...this.expandedModelGroups,
-            [key]: !this.isModelGroupExpanded(type, id),
-          };
         },
 
         toggleModelDetail(scope, scopeId, modelName) {
@@ -2771,108 +2574,173 @@
           return !!this.expandedModelRaw[this.modelDetailKey(scope, scopeId, modelName)];
         },
 
-        filterModelsByTabQuery(models) {
-          const q = this.modelsEffectiveQuery();
-          const list = models ?? [];
-          if (!q) return list;
-          return list.filter((m) => this.modelMatchesQuery(m, q));
-        },
-
         serverDisplayLabel(srv) {
           const kind = srv?.kind || 'server';
           const name = srv?.label ? `${srv.label} (${kind})` : kind;
           return `${name} · ${srv?.url || ''}`;
         },
 
-        modelsLocalSections() {
-          const q = this.modelsEffectiveQuery();
-          return (this.status.llm_servers ?? [])
-            .filter((srv) => srv.attached)
-            .map((srv) => {
-              const sid = String(srv.id ?? '');
-              const allModels = (this.status.local_models ?? []).filter(
-                (m) => String(m._source_server ?? '') === sid,
-              );
-              const models = this.filterModelsByTabQuery(allModels);
-              return {
-                id: sid,
-                server: srv,
-                label: this.serverDisplayLabel(srv),
-                models,
-                totalModels: allModels.length,
-              };
-            })
-            .filter((sec) => sec.models.length > 0 || !q);
+        isModelHidden(name) {
+          return (this.status.hidden_models ?? []).includes(name);
         },
 
-        modelsClusterSections() {
-          const q = this.modelsEffectiveQuery();
-          return (this.status.clusters ?? [])
-            .map((r) => {
-              const allModels = r.network_models ?? [];
-              const models = this.filterModelsByTabQuery(allModels);
-              return {
-                id: r.cluster_id,
-                label: this.displayClusterName(r.name) || 'Unnamed cluster',
-                models,
-                totalModels: allModels.length,
-              };
-            })
-            .filter((sec) => sec.models.length > 0 || !q);
-        },
+        unifiedModelsList() {
+          const hidden = new Set(this.status.hidden_models ?? []);
+          const byName = new Map();
+          const ensure = (name) => {
+            if (!byName.has(name)) {
+              byName.set(name, {
+                name,
+                localModel: null,
+                networkModel: null,
+                origins: [],
+              });
+            }
+            return byName.get(name);
+          };
 
-        modelsSwarmSections() {
-          const q = this.modelsEffectiveQuery();
-          return (this.status.swarms ?? [])
-            .map((s) => {
-              const allModels = s.network_models ?? [];
-              const models = this.filterModelsByTabQuery(allModels);
-              return {
+          for (const m of this.status.local_models ?? []) {
+            if (!m?.name) continue;
+            const entry = ensure(m.name);
+            entry.localModel = m;
+            const srv = (this.status.llm_servers ?? []).find(
+              (s) => String(s.id) === String(m._source_server ?? ''),
+            );
+            entry.origins.push({
+              kind: 'local',
+              id: String(m._source_server || 'local'),
+              label: srv ? this.serverDisplayLabel(srv) : (m._source_kind || 'Local'),
+              short: srv?.label || m._source_kind || 'Local',
+            });
+          }
+
+          for (const m of this.status.network_models ?? []) {
+            if (!m?.name) continue;
+            const entry = ensure(m.name);
+            entry.networkModel = m;
+            let addedRemote = false;
+            for (const c of m._clusters ?? []) {
+              const cfg = (this.status.clusters ?? []).find((r) => r.cluster_id === c.cluster_id);
+              const label = this.displayClusterName(cfg?.name) || c.cluster_id?.slice(0, 8) || 'cluster';
+              entry.origins.push({
+                kind: 'cluster',
+                id: c.cluster_id,
+                label: `Cluster · ${label}`,
+                short: label,
+              });
+              addedRemote = true;
+            }
+            for (const s of m._swarms ?? []) {
+              const cfg = (this.status.swarms ?? []).find((r) => r.swarm_id === s.swarm_id);
+              const label = cfg?.name || s.swarm_id?.slice(0, 8) || 'swarm';
+              entry.origins.push({
+                kind: 'swarm',
                 id: s.swarm_id,
-                label: s.name || 'Unnamed swarm',
-                models,
-                totalModels: allModels.length,
-              };
-            })
-            .filter((sec) => sec.models.length > 0 || !q);
+                label: `Swarm · ${label}`,
+                short: label,
+              });
+              addedRemote = true;
+            }
+            if (!addedRemote) {
+              entry.origins.push({
+                kind: 'network',
+                id: 'network',
+                label: 'Network',
+                short: 'Network',
+              });
+            }
+          }
+
+          const q = this.modelsEffectiveQuery();
+          let list = Array.from(byName.values()).map((entry) => {
+            const model = entry.localModel || entry.networkModel;
+            const originChips = [];
+            const seen = new Set();
+            for (const o of entry.origins) {
+              const key = `${o.kind}:${o.id}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              originChips.push(o);
+            }
+            return {
+              ...entry,
+              model,
+              visible: !hidden.has(entry.name),
+              originChips,
+              originSummary: originChips.map((o) => o.label).join(' · '),
+            };
+          });
+          if (q) {
+            list = list.filter((e) => this.modelMatchesQuery(e.model || { name: e.name }, q));
+          }
+          list.sort((a, b) => a.name.localeCompare(b.name));
+          return list;
         },
 
-        modelsLocalModelCount() {
+        modelsVisibleCount() {
+          const hidden = new Set(this.status.hidden_models ?? []);
           let n = 0;
-          for (const sec of this.modelsLocalSections()) n += sec.models.length;
+          for (const name of this._allUnifiedModelNames()) {
+            if (!hidden.has(name)) n += 1;
+          }
           return n;
         },
 
-        modelsClusterModelCount() {
-          let n = 0;
-          for (const sec of this.modelsClusterSections()) n += sec.models.length;
-          return n;
+        modelsHiddenCount() {
+          return (this.status.hidden_models ?? []).length;
         },
 
-        modelsSwarmModelCount() {
-          let n = 0;
-          for (const sec of this.modelsSwarmSections()) n += sec.models.length;
-          return n;
+        _allUnifiedModelNames() {
+          const names = new Set();
+          for (const m of this.status.local_models ?? []) {
+            if (m?.name) names.add(m.name);
+          }
+          for (const m of this.status.network_models ?? []) {
+            if (m?.name) names.add(m.name);
+          }
+          return names;
+        },
+
+        async setModelVisibility(name, visible) {
+          try {
+            const r = await fetch('/api/client/models/visibility', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name, visible }),
+            });
+            if (!r.ok) {
+              const t = await r.text();
+              console.error('visibility update failed', t);
+              return;
+            }
+            const data = await r.json();
+            this.status = { ...this.status, hidden_models: data.hidden_models ?? [] };
+          } catch (e) {
+            console.error(e);
+          }
+        },
+
+        async setAllModelsVisibility(visible) {
+          try {
+            const r = await fetch('/api/client/models/visibility/bulk', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ visible }),
+            });
+            if (!r.ok) {
+              const t = await r.text();
+              console.error('bulk visibility update failed', t);
+              return;
+            }
+            const data = await r.json();
+            this.status = { ...this.status, hidden_models: data.hidden_models ?? [] };
+          } catch (e) {
+            console.error(e);
+          }
         },
 
         expandModelGroupsMatchingSearch() {
-          const q = this.modelsEffectiveQuery();
-          if (!q) return;
-          const groups = { ...this.expandedModelGroups };
-          groups['section:local'] = true;
-          groups['section:cluster'] = true;
-          groups['section:swarm'] = true;
-          for (const srv of this.status.llm_servers ?? []) {
-            const sid = String(srv.id ?? '');
-            if (this.modelGroupHasMatch('local', sid)) groups[`local:${sid}`] = true;
-          }
-          for (const r of this.status.clusters ?? []) {
-            if (this.modelGroupHasMatch('cluster', r.cluster_id)) groups[`cluster:${r.cluster_id}`] = true;
-          }
-          for (const s of this.status.swarms ?? []) {
-            if (this.modelGroupHasMatch('swarm', s.swarm_id)) groups[`swarm:${s.swarm_id}`] = true;
-          }
-          this.expandedModelGroups = groups;
+          // Flat Models list — no origin group expansion required.
         },
 
         modelDetailRows(m, context = {}) {
@@ -2880,6 +2748,7 @@
           const add = (label, value) => {
             if (value != null && value !== '') rows.push({ label, value: String(value) });
           };
+          if (!m) return rows;
           const details = m.details || {};
 
           add('Name', m.name);
@@ -2915,6 +2784,9 @@
           if (m._source_url) add('Source URL', m._source_url);
           if (context.server) {
             add('Server', this.serverDisplayLabel(context.server));
+          }
+          if (Array.isArray(context.origins) && context.origins.length) {
+            add('Origins', context.origins.map((o) => o.label).join('; '));
           }
 
           if (m._peer_count != null) add('Peers', m._peer_count);
@@ -4369,6 +4241,10 @@
           return (this.status.llm_servers ?? []).some(s =>
             s.url === srv.url && s.kind === srv.kind && s.attached
           );
+        },
+
+        connectedServerCount() {
+          return (this.status.llm_servers ?? []).filter((s) => s.attached && s.connected).length;
         },
 
         async attachLlm(srv) {

@@ -1,17 +1,17 @@
 # mtrxAI Desktop Shell
 
-Native desktop packaging for the mtrxAI **client** application. Tauri does not implement app logic — it starts the same `client` crate used in containers, opens a webview to the client HTTP server, and shows the embedded UI from `client/ui/index.html`.
+Native desktop packaging for the mtrxAI **peer** application. Tauri does not implement app logic — it starts the same `peer` crate used in containers, opens a webview to the peer HTTP server, and shows the embedded UI from `peer/ui/v2/index.html`.
 
-> **Note:** The production distributed LLM proxy path is the **CLI client** (`client/`). The desktop app is a thin wrapper around that binary logic. See the [root README](../README.md) for the full architecture.
+> **Note:** The production distributed LLM proxy path is the **CLI peer** (`peer/`). The desktop app is a thin wrapper around that binary logic. See the [root README](../README.md) for the full architecture.
 
 ## How it works
 
 1. On first launch, the setup window defaults to the managed lobby (`api.mtrxai.net`). Saved settings are reused on later launches unless you delete them or set `MTRXAI_LOBBY_HOST`.
 2. Tauri sets desktop environment variables (`MTRXAI_LOBBY_HOST`, `MTRXAI_PROXY_PORT`, `MTRXAI_CONFIG_PATH`, `MTRXAI_ATTESTATION_SKIP`) and spawns `peer::run()` in-process.
 3. After the local client HTTP server is ready (`/health`), a webview opens at `http://127.0.0.1:11345` (default port).
-4. All UI ↔ backend communication uses the same HTTP REST API as the container deployment (`/api/client/*`).
+4. All UI ↔ backend communication uses the same HTTP REST API as the container deployment (`/api/*` on the peer local server).
 
-The desktop app is **self-contained** — it does not require Docker or any Ollama/client containers. Lobby and LLM servers are runtime dependencies: the app always boots and shows connection status in the UI (amber indicators when offline, background retry). P2P registration and inference still need those services when you use those features.
+The desktop app is **self-contained** — it does not require Docker or any Ollama/peer containers. Lobby and LLM servers are runtime dependencies: the app always boots and shows connection status in the UI (amber indicators when offline, background retry). P2P registration and inference still need those services when you use those features.
 
 No Tauri IPC is used for application features — only a bootstrap command for the lobby setup form.
 
@@ -20,7 +20,7 @@ No Tauri IPC is used for application features — only a bootstrap command for t
 - Rust 1.77+
 - Node.js 18+ (for `@tauri-apps/cli` only)
 - **Lobby server** (for P2P/network features; optional at boot — the app starts offline and retries)
-- Ollama or another LLM backend (optional; configure via the client UI — not required to launch)
+- Ollama or another LLM backend (optional; configure via the peer UI — not required to launch)
 
 ## Installation
 
@@ -118,9 +118,9 @@ To re-prompt for the lobby server, delete `desktop_settings.json` and restart th
 
 ## Related documentation
 
-- [Root README](../README.md) — architecture, Docker Compose, client proxy
-- [Client README](../client/README.md) — client API and configuration
-- [Server README](../server/README.md) — lobby API and database
+- [Root README](../README.md) — architecture, Docker Compose, peer proxy
+- [Peer README](../peer/README.md) — peer API and configuration
+- [Server README](../../mtrxAI-server/server/README.md) — lobby API and database
 
 ## License
 

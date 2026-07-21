@@ -18,7 +18,6 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tower_http::trace::TraceLayer;
 use tracing::Level;
-use tracing_subscriber::FmtSubscriber;
 
 use crate::agent_compat::{
     apply_ollama_body_defaults_with_default, chat_completion_to_responses,
@@ -231,7 +230,12 @@ impl ProxyState {
         body: &serde_json::Value,
         model: &str,
     ) -> Result<
-        impl futures_util::Stream<Item = Result<axum::body::Bytes, reqwest::Error>>,
+        std::pin::Pin<
+            Box<
+                dyn futures_util::Stream<Item = Result<axum::body::Bytes, reqwest::Error>>
+                    + Send,
+            >,
+        >,
         String,
     > {
         let backend = self
@@ -241,10 +245,29 @@ impl ProxyState {
             .await
             .or(self.llm_registry.inner.first_attached_backend().await)
             .ok_or_else(|| "backend not configured".to_string())?;
-        let url = format!("{}{}", backend.base_url(), path);
-        println!("Backend POST {} (model={})", url, model);
+
+        // Remote proxy clients send Ollama `/api/chat`. OpenAI-compat backends (inference-cell /
+        // llama.cpp) only expose `/v1/chat/completions` — match the local HTTP translation path.
+        let translate_ollama_chat =
+            !backend.supports_ollama_native() && path == "/api/chat";
+
+        let (forward_path, forward_body, model_label) = if translate_ollama_chat {
+            let mut normalized = body.clone();
+            let m_norm = model.strip_suffix(".gguf").unwrap_or(model);
+            normalized["model"] = serde_json::Value::String(m_norm.to_string());
+            (
+                "/v1/chat/completions".to_string(),
+                normalized,
+                m_norm.to_string(),
+            )
+        } else {
+            (path.to_string(), body.clone(), model.to_string())
+        };
+
+        let url = format!("{}{}", backend.base_url(), forward_path);
+        println!("Backend POST {} (model={})", url, model_label);
         let res = backend
-            .forward_post(path, body)
+            .forward_post(&forward_path, &forward_body)
             .await
             .map_err(|e| e.to_string())?;
         let status = res.status();
@@ -253,7 +276,110 @@ impl ProxyState {
             let preview: String = text.chars().take(500).collect();
             return Err(format!("upstream {status}: {preview}"));
         }
-        Ok(res.bytes_stream())
+
+        let ct = res
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        let mut stream_up = res.bytes_stream();
+        let model_name = model.to_string();
+
+        Ok(Box::pin(async_stream::stream! {
+            if !translate_ollama_chat {
+                while let Some(item) = stream_up.next().await {
+                    yield item;
+                }
+                return;
+            }
+
+            if !ct.contains("text/event-stream") {
+                // Non-streaming JSON completion → single Ollama chat object.
+                let mut buf = Vec::new();
+                while let Some(item) = stream_up.next().await {
+                    match item {
+                        Ok(chunk) => buf.extend_from_slice(&chunk),
+                        Err(e) => {
+                            yield Err(e);
+                            return;
+                        }
+                    }
+                }
+                let json: serde_json::Value =
+                    serde_json::from_slice(&buf).unwrap_or(serde_json::Value::Null);
+                let content = json
+                    .get("choices")
+                    .and_then(|c| c.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|c0| c0.get("message"))
+                    .and_then(|m| m.get("content"))
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("");
+                let out = serde_json::json!({
+                    "model": model_name,
+                    "created_at": chrono::Utc::now().to_rfc3339(),
+                    "message": { "role": "assistant", "content": content },
+                    "done": true,
+                });
+                yield Ok(axum::body::Bytes::from(
+                    serde_json::to_vec(&out).unwrap_or_default(),
+                ));
+                return;
+            }
+
+            let mut buf = String::new();
+            while let Some(item) = stream_up.next().await {
+                let chunk = match item {
+                    Ok(c) => c,
+                    Err(e) => {
+                        yield Err(e);
+                        return;
+                    }
+                };
+                buf.push_str(&String::from_utf8_lossy(&chunk));
+                while let Some(idx) = buf.find('\n') {
+                    let line = buf[..idx].trim().to_string();
+                    buf = buf[idx + 1..].to_string();
+                    if !line.starts_with("data:") {
+                        continue;
+                    }
+                    let payload = line.trim_start_matches("data:").trim();
+                    if payload == "[DONE]" {
+                        let done = serde_json::json!({"model": model_name, "done": true});
+                        yield Ok(axum::body::Bytes::from(
+                            serde_json::to_string(&done).unwrap_or_default() + "\n",
+                        ));
+                        return;
+                    }
+                    let parsed: serde_json::Value =
+                        serde_json::from_str(payload).unwrap_or(serde_json::Value::Null);
+                    let delta = parsed
+                        .get("choices")
+                        .and_then(|c| c.as_array())
+                        .and_then(|arr| arr.first())
+                        .and_then(|c0| c0.get("delta"))
+                        .and_then(|d| d.get("content"))
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("");
+                    if delta.is_empty() {
+                        continue;
+                    }
+                    let out = serde_json::json!({
+                        "model": model_name,
+                        "message": { "role": "assistant", "content": delta },
+                        "done": false
+                    });
+                    yield Ok(axum::body::Bytes::from(
+                        serde_json::to_string(&out).unwrap_or_default() + "\n",
+                    ));
+                }
+            }
+            let done = serde_json::json!({"model": model_name, "done": true});
+            yield Ok(axum::body::Bytes::from(
+                serde_json::to_string(&done).unwrap_or_default() + "\n",
+            ));
+        }))
     }
 }
 
@@ -320,10 +446,12 @@ pub async fn run_proxy_server(
     port: u16,
     state: ProxyState,
 ) -> Result<()> {
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .try_init();
 
     if state.setup_complete.load(Ordering::Relaxed) {
         if state.llm_registry.inner.attached_count().await > 0 {
@@ -438,7 +566,46 @@ async fn health_check(
 }
 
 async fn list_models(State(state): State<ProxyState>) -> Result<Response, (StatusCode, String)> {
-    require_backend(&state).await?;
+    if !state.setup_complete.load(Ordering::Relaxed) {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Setup not complete — open the web UI at /".to_string(),
+        ));
+    }
+
+    let hidden: std::collections::HashSet<String> = {
+        let cfg = state.client_config.read().await;
+        cfg.hidden_models.iter().cloned().collect()
+    };
+
+    let has_backend = state
+        .llm_registry
+        .inner
+        .first_attached_backend()
+        .await
+        .is_some();
+
+    if !has_backend {
+        let st = state.shared_state.lock().await;
+        let models: Vec<Value> = st
+            .network_models
+            .iter()
+            .filter(|m| {
+                m.get("name")
+                    .and_then(|n| n.as_str())
+                    .map(|n| !hidden.contains(n))
+                    .unwrap_or(false)
+            })
+            .map(crate::network_catalog::ollama_tag_from_network_model)
+            .collect();
+        let json = serde_json::json!({ "models": models });
+        let final_bytes = serde_json::to_vec(&json).unwrap_or_default();
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .body(final_bytes.into())
+            .unwrap());
+    }
 
     match state.llm_registry.inner.synthesize_merged_tags().await {
         Ok(mut json) => {
@@ -474,6 +641,14 @@ async fn list_models(State(state): State<ProxyState>) -> Result<Response, (Statu
                         }
                     }
                 }
+
+                models_array.retain(|model| {
+                    model
+                        .get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|n| !hidden.contains(n))
+                        .unwrap_or(true)
+                });
             }
 
             let final_bytes = serde_json::to_vec(&json).unwrap_or_default();
@@ -1478,7 +1653,61 @@ async fn version_info(State(state): State<ProxyState>) -> Result<Response, (Stat
 }
 
 async fn v1_models(State(state): State<ProxyState>) -> Result<Response, (StatusCode, String)> {
-    require_backend(&state).await?;
+    if !state.setup_complete.load(Ordering::Relaxed) {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Setup not complete — open the web UI at /".to_string(),
+        ));
+    }
+
+    let hidden: std::collections::HashSet<String> = {
+        let cfg = state.client_config.read().await;
+        cfg.hidden_models.iter().cloned().collect()
+    };
+
+    let has_backend = state
+        .llm_registry
+        .inner
+        .first_attached_backend()
+        .await
+        .is_some();
+
+    if !has_backend {
+        let st = state.shared_state.lock().await;
+        let mut data = Vec::new();
+        for network_model in &st.network_models {
+            let Some(name) = network_model.get("name").and_then(|n| n.as_str()) else {
+                continue;
+            };
+            if hidden.contains(name) {
+                continue;
+            }
+            let owned_by = crate::network_catalog::network_scope_label(network_model)
+                .map(|scope| match scope {
+                    "swarm" => "swarm",
+                    "cluster" => "cluster",
+                    "both" => "network",
+                    _ => "community",
+                })
+                .unwrap_or("community");
+            let mut remote_model = serde_json::json!({
+                "id": name,
+                "name": name,
+                "object": "model",
+                "created": 0,
+                "owned_by": owned_by,
+            });
+            crate::network_catalog::enrich_openai_remote_model(&mut remote_model, network_model);
+            data.push(remote_model);
+        }
+        let json = serde_json::json!({ "object": "list", "data": data });
+        let final_bytes = serde_json::to_vec(&json).unwrap_or_default();
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .body(final_bytes.into())
+            .unwrap());
+    }
 
     match state.llm_registry.inner.synthesize_merged_v1_models().await {
         Ok(mut json) => {
@@ -1526,6 +1755,14 @@ async fn v1_models(State(state): State<ProxyState>) -> Result<Response, (StatusC
                         }
                     }
                 }
+
+                data_array.retain(|entry| {
+                    let name = entry
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| entry.get("name").and_then(|v| v.as_str()));
+                    name.map(|n| !hidden.contains(n)).unwrap_or(true)
+                });
             }
 
             let final_bytes = serde_json::to_vec(&json).unwrap_or_default();

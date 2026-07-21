@@ -39,22 +39,14 @@ Requires the lobby server (with PostgreSQL) to be running for peer registration 
 | `agent_compat.rs` | Cursor/VS Code agent request normalization |
 | `shared.rs` | `AppState`, `ProxyRequestCommand` |
 
-### Legacy (not used by `src/main.rs`)
-
-| File | Notes |
-|------|-------|
-| `../main.rs` | Interactive menu binary |
-| `llm_chat.rs` | Standalone local Ollama chat |
-| `remote_llm_chat.rs` | Older WebRTC chat protocol |
-
 ## Environment variables
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `MTRXAI_MODEL_POLL_SECS` | `30` | Ollama poll + lobby advertisement interval |
 | `MTRXAI_GEO_LOOKUP_URL` | ip-api.com | Geo lookup endpoint |
-| `MTRXAI_GPU_PROBE` | `auto` | GPU probe mode: `auto`, `off`, `force` (detects `nvidia-smi`, `amd-smi`/`rocm-smi`, Apple Silicon) |
-| `MTRXAI_GPU_PROBE_VENDORS` | all | Comma-separated vendor filter: `nvidia`, `amd`, `apple`, or `all` |
+| `MTRXAI_GPU_PROBE` | `auto` | GPU probe mode: `auto`, `off`, `force`. At process start the peer discovers vendor monitoring CLIs once (`nvidia-smi`, `amd-smi`/`rocm-smi`, `xpu-smi` / Linux `intel_gpu_top`, Apple Silicon `ioreg`/`sysctl`) via PATH plus well-known install paths, then samples only the tools that were found (missing vendors are not re-scanned until restart). |
+| `MTRXAI_GPU_PROBE_VENDORS` | all | Comma-separated vendor filter: `nvidia`, `amd`, `intel`, `apple`, or `all` |
 | `MTRXAI_AGENT_DEBUG` | off | Agent traffic logging (`1` to enable) |
 
 ## Persistent files
