@@ -157,10 +157,7 @@ fn parse_usage_from_value(value: &Value) -> Option<TokenUsage> {
         }
     }
 
-    let done = value
-        .get("done")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let done = value.get("done").and_then(|v| v.as_bool()).unwrap_or(false);
     if !done {
         return None;
     }

@@ -32,7 +32,10 @@ fn rewrites_text_tool_call_in_response() {
 fn end_to_end_cursor_style_request_and_text_tool_response() {
     let (normalized, req_summary) = normalize_chat_request(common::cursor_style_request());
     assert!(req_summary.normalized);
-    assert_eq!(normalized["tools"][0]["function"]["name"], "run_in_terminal");
+    assert_eq!(
+        normalized["tools"][0]["function"]["name"],
+        "run_in_terminal"
+    );
 
     let (final_response, resp_summary) = rewrite_chat_response(common::text_tool_response());
     assert!(resp_summary.rewrote_text_tool_call);

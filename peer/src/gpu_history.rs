@@ -101,9 +101,7 @@ pub fn spawn_gpu_monitor(
                 Some(crate::llm_backend::LlmBackend::OpenAiCompat(b)) => {
                     (Some(b.client.clone()), None)
                 }
-                Some(crate::llm_backend::LlmBackend::Custom(b)) => {
-                    (Some(b.client.clone()), None)
-                }
+                Some(crate::llm_backend::LlmBackend::Custom(b)) => (Some(b.client.clone()), None),
                 None => (None, None),
             };
 

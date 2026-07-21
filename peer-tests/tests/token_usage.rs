@@ -11,7 +11,8 @@ fn parses_ollama_done_line() {
 
 #[test]
 fn parses_openai_usage() {
-    let line = r#"{"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":15,"total_tokens":20}}"#;
+    let line =
+        r#"{"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":15,"total_tokens":20}}"#;
     let usage = parse_usage_from_buffer(line).unwrap();
     assert_eq!(usage.total_tokens, 20);
 }
@@ -43,9 +44,12 @@ fn accumulate_prefers_latest_usage() {
     let usage = peer::token_usage::accumulate_and_parse_usage(&mut buf, chunk1);
     assert!(usage.is_none());
     let usage = peer::token_usage::accumulate_and_parse_usage(&mut buf, chunk2).unwrap();
-    assert_eq!(usage, TokenUsage {
-        prompt_tokens: 3,
-        completion_tokens: 7,
-        total_tokens: 10,
-    });
+    assert_eq!(
+        usage,
+        TokenUsage {
+            prompt_tokens: 3,
+            completion_tokens: 7,
+            total_tokens: 10,
+        }
+    );
 }

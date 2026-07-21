@@ -7,12 +7,13 @@ use crate::gpu::util::{mb_from_bytes, pct_from_used_total};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::shared::GpuDeviceInfo;
 use crate::shared::GpuHostStatus;
+use std::path::Path;
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-pub fn probe_apple() -> Option<GpuHostStatus> {
-    let ioreg_text = run_command("ioreg", &["-r", "-d", "1", "-c", "IOAccelerator", "-l"])?;
-    let chip_name = run_command("sysctl", &["-n", "machdep.cpu.brand_string"])
-        .or_else(|| run_command("sysctl", &["-n", "hw.model"]))
+pub fn probe_apple(ioreg: &Path, sysctl: &Path) -> Option<GpuHostStatus> {
+    let ioreg_text = run_command(ioreg, &["-r", "-d", "1", "-c", "IOAccelerator", "-l"])?;
+    let chip_name = run_command(sysctl, &["-n", "machdep.cpu.brand_string"])
+        .or_else(|| run_command(sysctl, &["-n", "hw.model"]))
         .unwrap_or_else(|| "Apple GPU".to_string());
 
     let (util_pct, mem_used_bytes, mem_total_bytes) = parse_ioreg_performance(&ioreg_text);
@@ -21,7 +22,7 @@ pub fn probe_apple() -> Option<GpuHostStatus> {
     let mem_total_mb = if mem_total_bytes > 0 {
         mb_from_bytes(mem_total_bytes)
     } else {
-        run_command("sysctl", &["-n", "hw.memsize"])
+        run_command(sysctl, &["-n", "hw.memsize"])
             .and_then(|s| s.parse::<u64>().ok())
             .map(mb_from_bytes)
             .unwrap_or(0)
@@ -52,7 +53,7 @@ pub fn probe_apple() -> Option<GpuHostStatus> {
 }
 
 #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-pub fn probe_apple() -> Option<GpuHostStatus> {
+pub fn probe_apple(_ioreg: &Path, _sysctl: &Path) -> Option<GpuHostStatus> {
     None
 }
 
@@ -91,10 +92,7 @@ fn parse_ioreg_performance(text: &str) -> (u8, u64, u64) {
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn extract_ioreg_number(line: &str) -> Option<u64> {
     let rhs = line.rsplit('=').next()?.trim();
-    let digits: String = rhs
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
+    let digits: String = rhs.chars().take_while(|c| c.is_ascii_digit()).collect();
     if digits.is_empty() {
         None
     } else {

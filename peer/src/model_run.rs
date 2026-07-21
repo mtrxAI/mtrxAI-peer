@@ -1,5 +1,7 @@
 use crate::gpu_history::unix_now;
-use crate::ollama_client::{gpu_probe_mode, pull_model_with_progress, warmup_model, fetch_show_info, is_embed_only};
+use crate::ollama_client::{
+    fetch_show_info, gpu_probe_mode, is_embed_only, pull_model_with_progress, warmup_model,
+};
 use crate::shared::{LocalModelRunState, SharedState};
 use std::sync::Arc;
 
@@ -61,9 +63,14 @@ pub fn spawn_local_model_run_on_server(
         )
         .await;
 
-        if let Err(e) =
-            run_local_model_task(&shared_state, &proxy_state, &job_id, &model, server_id.as_deref())
-                .await
+        if let Err(e) = run_local_model_task(
+            &shared_state,
+            &proxy_state,
+            &job_id,
+            &model,
+            server_id.as_deref(),
+        )
+        .await
         {
             upsert_local_run(
                 &shared_state,

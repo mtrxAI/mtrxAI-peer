@@ -15,8 +15,7 @@ fn lobby_tls_env() -> bool {
 }
 
 fn host_uses_tls_by_default(host: &str) -> bool {
-    host.eq_ignore_ascii_case("mtrxai.net")
-        || host.to_ascii_lowercase().ends_with(".mtrxai.net")
+    host.eq_ignore_ascii_case("mtrxai.net") || host.to_ascii_lowercase().ends_with(".mtrxai.net")
 }
 
 fn split_host_port(host_port: &str) -> (&str, Option<u16>) {
@@ -24,9 +23,7 @@ fn split_host_port(host_port: &str) -> (&str, Option<u16>) {
         let end = host_port.find(']').unwrap_or(host_port.len());
         let host = &host_port[..=end];
         let rest = host_port.get(end + 1..).unwrap_or("");
-        let port = rest
-            .strip_prefix(':')
-            .and_then(|p| p.parse::<u16>().ok());
+        let port = rest.strip_prefix(':').and_then(|p| p.parse::<u16>().ok());
         return (host, port);
     }
 
@@ -123,7 +120,9 @@ pub fn ollama_http_timeout_secs() -> u64 {
 /// Shared HTTP client for lobby API calls (TLS, timeouts).
 pub fn build_lobby_http_client() -> anyhow::Result<reqwest::Client> {
     reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(DEFAULT_LOBBY_HTTP_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(
+            DEFAULT_LOBBY_HTTP_TIMEOUT_SECS,
+        ))
         .connect_timeout(std::time::Duration::from_secs(
             DEFAULT_HTTP_CONNECT_TIMEOUT_SECS,
         ))
@@ -186,7 +185,10 @@ mod tests {
             normalize_lobby_host("https://lobby.example.com/"),
             "lobby.example.com:443"
         );
-        assert_eq!(normalize_lobby_host("mtrxai-server:8080"), "mtrxai-server:8080");
+        assert_eq!(
+            normalize_lobby_host("mtrxai-server:8080"),
+            "mtrxai-server:8080"
+        );
     }
 
     #[test]

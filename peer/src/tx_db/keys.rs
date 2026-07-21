@@ -65,7 +65,8 @@ impl TxStore {
 
     pub fn get_peer_auth_key_sync(&self) -> Result<Option<String>> {
         let r = self.db.r_transaction()?;
-        let record: Option<PeerAuthKeyRecord> = r.get().primary("__mtrxai_peer_auth__".to_string())?;
+        let record: Option<PeerAuthKeyRecord> =
+            r.get().primary("__mtrxai_peer_auth__".to_string())?;
         Ok(record.map(|r| r.seed_hex))
     }
 }
@@ -77,7 +78,9 @@ mod tests {
     #[test]
     fn room_key_round_trip() {
         let store = TxStore::open_in_memory().unwrap();
-        store.put_room_key_sync("room-1", b"secret-key-blob").unwrap();
+        store
+            .put_room_key_sync("room-1", b"secret-key-blob")
+            .unwrap();
         let got = store.get_room_key_sync("room-1").unwrap().unwrap();
         assert_eq!(got, b"secret-key-blob");
     }

@@ -3381,6 +3381,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "matchers"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1525a2a28c7f4fa0fc98bb91ae755d1e2d1505079e05539e35bc876b5d65ae9"
+dependencies = [
+ "regex-automata",
+]
+
+[[package]]
 name = "matchit"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3470,8 +3479,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "mtrxai-auth"
+version = "0.2.1"
+
+[[package]]
+name = "mtrxai-icell-api"
+version = "0.2.1"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "mtrxai-protocol"
+version = "0.2.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "mtrxai-tauri"
-version = "0.1.5"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "peer",
@@ -4183,7 +4212,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "peer"
-version = "0.1.5"
+version = "0.2.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -4199,6 +4228,9 @@ dependencies = [
  "hmac",
  "libp2p",
  "mtrxai-attestation",
+ "mtrxai-auth",
+ "mtrxai-icell-api",
+ "mtrxai-protocol",
  "native_db",
  "native_model",
  "once_cell",
@@ -6757,10 +6789,14 @@ version = "0.3.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb7f578e5945fb242538965c2d0b04418d38ec25c79d160cd279bf0731c8d319"
 dependencies = [
+ "matchers",
  "nu-ansi-term",
+ "once_cell",
+ "regex-automata",
  "sharded-slab",
  "smallvec",
  "thread_local",
+ "tracing",
  "tracing-core",
  "tracing-log",
 ]

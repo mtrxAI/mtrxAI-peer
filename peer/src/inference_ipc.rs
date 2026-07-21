@@ -52,7 +52,9 @@ impl IpcStream {
                 let _ = path;
             }
         }
-        Ok(Self::Tcp(TcpStream::connect(inference_ipc_tcp_addr()).await?))
+        Ok(Self::Tcp(
+            TcpStream::connect(inference_ipc_tcp_addr()).await?,
+        ))
     }
 
     async fn write_frame(&mut self, msg: &StreamMessage) -> Result<()> {
@@ -184,7 +186,10 @@ impl InferenceIpcClient {
 
 pub struct InferenceIpcServer {
     handler: Arc<
-        dyn Fn(StreamMessage) -> std::pin::Pin<Box<dyn std::future::Future<Output = StreamMessage> + Send>>
+        dyn Fn(
+                StreamMessage,
+            )
+                -> std::pin::Pin<Box<dyn std::future::Future<Output = StreamMessage> + Send>>
             + Send
             + Sync,
     >,
@@ -299,14 +304,7 @@ impl SidecarBridge {
         msg: StreamMessage,
     ) -> Result<StreamMessage, String> {
         let (tx, mut rx) = mpsc::channel(1);
-        *self.pending.lock().await = Some((
-            req_id,
-            path,
-            body,
-            room_id,
-            consumer_peer_id,
-            tx,
-        ));
+        *self.pending.lock().await = Some((req_id, path, body, room_id, consumer_peer_id, tx));
         if let Ok(mut stream) = IpcStream::connect().await {
             let _ = stream.write_frame(&msg).await;
         }

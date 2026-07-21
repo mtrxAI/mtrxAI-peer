@@ -1,6 +1,9 @@
+mod alias;
+
 use axum::{
     extract::{Path, Query, State},
     http::{header, StatusCode},
+    middleware,
     response::{Html, IntoResponse},
     routing::{delete, get, patch, post, put},
     Json, Router,
@@ -11,28 +14,24 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::client_config::{
-    create_cluster_with_lobby, create_swarm_membership, ensure_p2p_mode_for_swarms,
+    apply_register_response, beta_signup_with_lobby, create_cluster_with_lobby,
+    create_swarm_membership, ensure_p2p_mode_for_swarms, fetch_lobby_config, fetch_service_credits,
     find_cluster_mut, find_swarm_by_token, find_swarm_mut, has_attached_llm_servers,
-    join_cluster_with_lobby, join_private_cluster, join_public_cluster_by_name,
-    list_clusters_with_lobby, membership_from_response, fetch_service_credits, fetch_lobby_config,
-    is_inference_cell_kind, is_invite_only_registration, register_with_lobby, requires_credentials_registration,
-    beta_signup_with_lobby,
-    probe_lobby_reachable,
-    remove_cluster, remove_swarm, save_client_config, apply_register_response,
-    resolve_swarm_bootnodes, upsert_cluster, upsert_swarm, validate_custom_server_entry,
-    CustomModelEntry, ClusterMembership, SwarmMembership, LlmServerEntry, PublicClusterView,
-    DEFAULT_PUBLIC_CLUSTER,
+    is_inference_cell_kind, is_invite_only_registration, join_cluster_with_lobby,
+    join_private_cluster, join_public_cluster_by_name, list_clusters_with_lobby,
+    membership_from_response, probe_lobby_reachable, register_with_lobby, remove_cluster,
+    remove_swarm, requires_credentials_registration, resolve_swarm_bootnodes, save_client_config,
+    upsert_cluster, upsert_swarm, validate_custom_server_entry, ClusterMembership,
+    CustomModelEntry, LlmServerEntry, PublicClusterView, SwarmMembership, DEFAULT_PUBLIC_CLUSTER,
 };
-use crate::swarm_manager::sync_swarm_status_for_proxy;
 use crate::cluster_manager::{cluster_membership_from_response, sync_peer_connections_with_store};
 use crate::llm_backend::{normalize_backend_label, LlmBackend};
 use crate::llm_discovery;
-use crate::llm_registry::{LlmServerView, ModelCollision};
-use crate::ollama_client::{
-    fetch_show_info, is_embed_only, supports_embed, supports_generate,
-};
 use crate::llm_proxy::ProxyState;
+use crate::llm_registry::{LlmServerView, ModelCollision};
+use crate::ollama_client::{fetch_show_info, is_embed_only, supports_embed, supports_generate};
 use crate::shared::{ConnectionAction, ModelStartAction, RuntimeEvent};
+use crate::swarm_manager::sync_swarm_status_for_proxy;
 
 const INDEX_HTML: &str = include_str!("../../ui/v2/index.html");
 
@@ -74,7 +73,10 @@ pub fn router(state: ProxyState) -> Router {
             "/api/client/clusters/:cluster_id/maintenance",
             post(post_cluster_maintenance),
         )
-        .route("/api/client/swarms", get(get_swarms).post(post_swarm_create))
+        .route(
+            "/api/client/swarms",
+            get(get_swarms).post(post_swarm_create),
+        )
         .route("/api/client/swarms/join", post(post_swarm_join))
         .route("/api/client/swarms/:swarm_id", delete(delete_swarm))
         .route(
@@ -111,10 +113,22 @@ pub fn router(state: ProxyState) -> Router {
         )
         .route("/api/client/llm/scan", get(get_llm_scan))
         .route("/api/client/llm/select", post(post_llm_select))
-        .route("/api/client/llm/servers", get(get_llm_servers).post(post_llm_server))
-        .route("/api/client/llm/servers/:id/attach", post(post_llm_server_attach))
-        .route("/api/client/llm/servers/:id/detach", post(post_llm_server_detach))
-        .route("/api/client/llm/servers/:id", patch(patch_llm_server).delete(delete_llm_server))
+        .route(
+            "/api/client/llm/servers",
+            get(get_llm_servers).post(post_llm_server),
+        )
+        .route(
+            "/api/client/llm/servers/:id/attach",
+            post(post_llm_server_attach),
+        )
+        .route(
+            "/api/client/llm/servers/:id/detach",
+            post(post_llm_server_detach),
+        )
+        .route(
+            "/api/client/llm/servers/:id",
+            patch(patch_llm_server).delete(delete_llm_server),
+        )
         .route(
             "/api/client/llm/servers/:id/api-key",
             put(put_llm_server_api_key),
@@ -124,27 +138,49 @@ pub fn router(state: ProxyState) -> Router {
             put(put_llm_server_admin_token),
         )
         .route("/api/client/models/catalog", get(get_models_catalog))
-        .route("/api/client/models/catalog/:name", get(get_models_catalog_entry))
+        .route(
+            "/api/client/models/catalog/:name",
+            get(get_models_catalog_entry),
+        )
         .route("/api/client/models/hf-catalog", get(get_hf_models_catalog))
-        .route("/api/client/models/hf-catalog/quants", get(get_hf_model_quants))
+        .route(
+            "/api/client/models/hf-catalog/quants",
+            get(get_hf_model_quants),
+        )
         .route("/api/client/models/request", post(post_model_request))
         .route("/api/client/models/run-local", post(post_model_run_local))
+        .route(
+            "/api/client/models/visibility",
+            patch(patch_model_visibility),
+        )
+        .route(
+            "/api/client/models/visibility/bulk",
+            post(post_model_visibility_bulk),
+        )
         .route("/api/client/models/:name/load", post(load_local_model))
         .route("/api/client/models/:name/unload", post(unload_local_model))
         .route("/api/client/models/:name", delete(delete_local_model))
         .route("/api/client/models/respond", post(post_model_respond))
-        .route("/api/client/connection/respond", post(post_connection_respond))
+        .route(
+            "/api/client/connection/respond",
+            post(post_connection_respond),
+        )
         .route("/api/client/settings", get(get_settings))
         .route("/api/client/settings", put(put_settings))
         .route("/api/client/status", get(get_status))
         .route("/api/client/peers/blocked", get(get_blocked_peers))
         .route("/api/client/peers/:peer_id/block", post(post_block_peer))
-        .route("/api/client/peers/:peer_id/block", delete(delete_block_peer))
+        .route(
+            "/api/client/peers/:peer_id/block",
+            delete(delete_block_peer),
+        )
         .route("/api/client/peers/:peer_id/report", post(post_report_peer))
         .route("/api/client/transactions", get(get_transactions))
         .route("/api/client/transactions/stats", get(get_transaction_stats))
         .route("/assets/logo.svg", get(logo_asset))
         .route("/", get(index_page))
+        // Prefer `/api/peer/*` going forward; `/api/client/*` remains for the embedded UI.
+        .layer(middleware::from_fn(alias::alias_api_peer_to_client))
         .with_state(state)
 }
 
@@ -195,7 +231,10 @@ async fn get_setup(State(state): State<ProxyState>) -> Json<SetupResponse> {
     })
 }
 
-async fn sync_registry_after_config_change(state: &ProxyState, cfg: &crate::client_config::ClientConfig) {
+async fn sync_registry_after_config_change(
+    state: &ProxyState,
+    cfg: &crate::client_config::ClientConfig,
+) {
     if let Err(e) = state.llm_registry.inner.sync_from_config(cfg).await {
         eprintln!("⚠️ Registry sync failed: {}", e);
         return;
@@ -226,7 +265,9 @@ struct LobbyConfigProxyResponse {
     peer_registration: String,
 }
 
-async fn get_lobby_config(State(state): State<ProxyState>) -> Result<Json<LobbyConfigProxyResponse>, (StatusCode, String)> {
+async fn get_lobby_config(
+    State(state): State<ProxyState>,
+) -> Result<Json<LobbyConfigProxyResponse>, (StatusCode, String)> {
     let lobby_host = state.lobby_host.clone();
     let cfg = fetch_lobby_config(&state.http_client, &lobby_host)
         .await
@@ -288,8 +329,8 @@ async fn post_beta_signup(
         body.service_password.trim(),
         body.terms_accepted,
     )
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    .await
+    .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(BetaSignupResponse {
         status: "pending".into(),
         message: "Your request will be reviewed and you will be contacted soon.".into(),
@@ -311,10 +352,7 @@ fn parse_service_credentials(body: &RegisterBody) -> Result<(&str, &str), (Statu
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .ok_or((
-            StatusCode::BAD_REQUEST,
-            "service name required".to_string(),
-        ))?;
+        .ok_or((StatusCode::BAD_REQUEST, "service name required".to_string()))?;
     let password = body
         .service_password
         .as_deref()
@@ -387,11 +425,12 @@ async fn post_register(
             "terms acceptance required".to_string(),
         ));
     }
-    let (service_name, service_password) = if create_new_service || body.has_existing_service || body.registered {
-        parse_service_credentials(&body)?
-    } else {
-        ("", "")
-    };
+    let (service_name, service_password) =
+        if create_new_service || body.has_existing_service || body.registered {
+            parse_service_credentials(&body)?
+        } else {
+            ("", "")
+        };
     let contact_email = if create_new_service {
         Some(parse_contact_email(&body)?)
     } else {
@@ -444,18 +483,17 @@ async fn finish_register(
         .unwrap_or(DEFAULT_PUBLIC_CLUSTER)
         .to_string();
 
-    let cluster_resp = join_public_cluster_by_name(
-        &state.http_client,
-        &state.lobby_host,
-        &cluster_name,
-        None,
-    )
-    .await
-    .map_err(|e| lobby_gateway_err("Cluster join failed", e))?;
+    let cluster_resp =
+        join_public_cluster_by_name(&state.http_client, &state.lobby_host, &cluster_name, None)
+            .await
+            .map_err(|e| lobby_gateway_err("Cluster join failed", e))?;
 
     {
         let mut cfg = state.client_config.write().await;
-        upsert_cluster(&mut cfg, membership_from_response(&cluster_resp, Some(String::new())));
+        upsert_cluster(
+            &mut cfg,
+            membership_from_response(&cluster_resp, Some(String::new())),
+        );
         cfg.cluster = Some(cluster_name);
         save_client_config(&cfg).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
@@ -618,14 +656,24 @@ async fn post_cluster_join(
 ) -> Result<Json<ClusterActionResponse>, (StatusCode, String)> {
     let lobby_host = state.lobby_host.clone();
     let resp = match (
-        body.cluster_id.as_deref().map(str::trim).filter(|s| !s.is_empty()),
-        body.name.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+        body.cluster_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty()),
+        body.name
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty()),
     ) {
-        (Some(id), Some(name)) => {
-            join_private_cluster(&state.http_client, &lobby_host, id, name, body.password.as_deref())
-                .await
-                .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?
-        }
+        (Some(id), Some(name)) => join_private_cluster(
+            &state.http_client,
+            &lobby_host,
+            id,
+            name,
+            body.password.as_deref(),
+        )
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?,
         (Some(id), None) => join_cluster_with_lobby(
             &state.http_client,
             &lobby_host,
@@ -807,8 +855,10 @@ async fn post_swarm_join(
         let mut cfg = state.client_config.write().await;
         let membership = if let Some(existing) = find_swarm_by_token(&cfg, token) {
             let swarm_id = existing.swarm_id.clone();
-            let entry = find_swarm_mut(&mut cfg, &swarm_id)
-                .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "swarm lookup failed".to_string()))?;
+            let entry = find_swarm_mut(&mut cfg, &swarm_id).ok_or((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "swarm lookup failed".to_string(),
+            ))?;
             if body.name.is_some() {
                 entry.name = body.name.clone();
             }
@@ -818,7 +868,8 @@ async fn post_swarm_join(
             }
             entry.clone()
         } else {
-            let mut membership = create_swarm_membership(body.name.clone(), Some(token.to_string()));
+            let mut membership =
+                create_swarm_membership(body.name.clone(), Some(token.to_string()));
             membership.bootnodes = body.bootnodes.clone();
             if membership.bootnodes.is_empty() {
                 membership.bootnodes =
@@ -994,7 +1045,9 @@ async fn delete_swarm(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn get_llm_scan(State(state): State<ProxyState>) -> Json<Vec<llm_discovery::DiscoveredServer>> {
+async fn get_llm_scan(
+    State(state): State<ProxyState>,
+) -> Json<Vec<llm_discovery::DiscoveredServer>> {
     let servers = llm_discovery::scan_local_servers(&state.http_client).await;
     Json(servers)
 }
@@ -1021,10 +1074,12 @@ async fn post_llm_select(
     let client = state.ollama_http_client.read().await.clone();
     let backend = LlmBackend::from_config(&label, &url, client)
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-    backend
-        .health_check()
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Health check failed: {}", e)))?;
+    backend.health_check().await.map_err(|e| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("Health check failed: {}", e),
+        )
+    })?;
 
     let server_id = {
         let mut cfg = state.client_config.write().await;
@@ -1068,7 +1123,10 @@ async fn post_llm_select(
     }
 
     if state.client_config.read().await.setup_complete {
-        let _ = state.runtime_event_tx.send(RuntimeEvent::SetupComplete).await;
+        let _ = state
+            .runtime_event_tx
+            .send(RuntimeEvent::SetupComplete)
+            .await;
     }
 
     Ok(Json(LlmSelectResponse {
@@ -1123,8 +1181,7 @@ async fn post_llm_server(
         models: models.clone(),
         advertise_to_cluster: true,
     };
-    validate_custom_server_entry(&entry)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    validate_custom_server_entry(&entry).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
     if !crate::client_config::is_custom_server_kind(&label) {
         let client = state.ollama_http_client.read().await.clone();
@@ -1136,18 +1193,22 @@ async fn post_llm_server(
             LlmBackend::from_config(&label, &url, client)
                 .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
         };
-        backend
-            .health_check()
-            .await
-            .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Health check failed: {}", e)))?;
+        backend.health_check().await.map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Health check failed: {}", e),
+            )
+        })?;
     } else {
         let client = state.ollama_http_client.read().await.clone();
         let backend = LlmBackend::from_server_entry(&entry, body.api_key.clone(), client)
             .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-        backend
-            .health_check()
-            .await
-            .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Health check failed: {}", e)))?;
+        backend.health_check().await.map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Health check failed: {}", e),
+            )
+        })?;
     }
 
     let server_id = {
@@ -1290,7 +1351,10 @@ async fn post_llm_server_attach(
     }
 
     if state.client_config.read().await.setup_complete {
-        let _ = state.runtime_event_tx.send(RuntimeEvent::SetupComplete).await;
+        let _ = state
+            .runtime_event_tx
+            .send(RuntimeEvent::SetupComplete)
+            .await;
     }
 
     let cfg = state.client_config.read().await.clone();
@@ -1312,6 +1376,7 @@ async fn post_llm_server_detach(
             .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
         save_client_config(&cfg).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         sync_registry_after_config_change(&state, &cfg).await;
+        state.bump_cluster_state();
     }
 
     let cfg = state.client_config.read().await.clone();
@@ -1365,6 +1430,7 @@ async fn delete_llm_server(
             .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
         save_client_config(&cfg).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         sync_registry_after_config_change(&state, &cfg).await;
+        state.bump_cluster_state();
     }
 
     let cfg = state.client_config.read().await.clone();
@@ -1393,6 +1459,7 @@ struct StatusResponse {
     local_model_collisions: Vec<ModelCollision>,
     local_models: Vec<Value>,
     network_models: Vec<Value>,
+    hidden_models: Vec<String>,
     gpu_host: Option<crate::shared::GpuHostStatus>,
     gpu_history: crate::shared::GpuHistory,
     connections: ConnectionsView,
@@ -1443,12 +1510,9 @@ async fn get_status(State(state): State<ProxyState>) -> Json<StatusResponse> {
     };
 
     if !service_id_for_credits.is_empty() {
-        if let Some(fresh) = fetch_service_credits(
-            &state.http_client,
-            &cfg.lobby_host,
-            &service_id_for_credits,
-        )
-        .await
+        if let Some(fresh) =
+            fetch_service_credits(&state.http_client, &cfg.lobby_host, &service_id_for_credits)
+                .await
         {
             state.shared_state.lock().await.credit_balance = fresh;
         }
@@ -1536,6 +1600,7 @@ async fn get_status(State(state): State<ProxyState>) -> Json<StatusResponse> {
         local_model_collisions,
         local_models,
         network_models,
+        hidden_models: cfg.hidden_models.clone(),
         gpu_host,
         gpu_history,
         connections: ConnectionsView {
@@ -1931,15 +1996,10 @@ async fn get_hf_models_catalog(
     let q = params.q.unwrap_or_default();
     let limit = params.limit.unwrap_or(50);
     let hf_token = crate::hf_catalog::effective_hf_token();
-    crate::hf_catalog::search_hf_gguf_models(
-        &state.http_client,
-        &q,
-        limit,
-        hf_token.as_deref(),
-    )
-    .await
-    .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))
-    .map(Json)
+    crate::hf_catalog::search_hf_gguf_models(&state.http_client, &q, limit, hf_token.as_deref())
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))
+        .map(Json)
 }
 
 #[derive(Deserialize)]
@@ -1981,10 +2041,7 @@ async fn get_models_catalog(
     let q = params.q.unwrap_or_default();
     let limit = params.limit.unwrap_or(50).clamp(1, 200);
     let url = crate::lobby_url::lobby_api_url(&cfg.lobby_host, "/api/public/models/catalog");
-    let mut query: Vec<(&str, String)> = vec![
-        ("q", q),
-        ("limit", limit.to_string()),
-    ];
+    let mut query: Vec<(&str, String)> = vec![("q", q), ("limit", limit.to_string())];
     if let Some(min) = params.min_vram_mb {
         query.push(("min_vram_mb", min.to_string()));
     }
@@ -2071,6 +2128,92 @@ async fn unload_local_model(
     local_model_action(&state, &name, LocalModelAction::Unload).await
 }
 
+#[derive(Deserialize)]
+struct ModelVisibilityBody {
+    name: String,
+    visible: bool,
+}
+
+#[derive(Deserialize)]
+struct ModelVisibilityBulkBody {
+    visible: bool,
+}
+
+#[derive(Serialize)]
+struct ModelVisibilityResponse {
+    hidden_models: Vec<String>,
+}
+
+fn set_model_hidden(hidden: &mut Vec<String>, name: &str, hide: bool) {
+    let name = name.trim();
+    if name.is_empty() {
+        return;
+    }
+    if hide {
+        if !hidden.iter().any(|n| n == name) {
+            hidden.push(name.to_string());
+        }
+    } else {
+        hidden.retain(|n| n != name);
+    }
+}
+
+fn collect_unified_model_names(state: &crate::shared::AppState) -> Vec<String> {
+    use std::collections::BTreeSet;
+    let mut names = BTreeSet::new();
+    for m in &state.local_models_full {
+        if let Some(n) = m.get("name").and_then(|v| v.as_str()) {
+            if !n.is_empty() {
+                names.insert(n.to_string());
+            }
+        }
+    }
+    for m in &state.network_models {
+        if let Some(n) = m.get("name").and_then(|v| v.as_str()) {
+            if !n.is_empty() {
+                names.insert(n.to_string());
+            }
+        }
+    }
+    names.into_iter().collect()
+}
+
+async fn patch_model_visibility(
+    State(state): State<ProxyState>,
+    Json(body): Json<ModelVisibilityBody>,
+) -> Result<Json<ModelVisibilityResponse>, (StatusCode, String)> {
+    let name = body.name.trim().to_string();
+    if name.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "name is required".to_string()));
+    }
+    let mut cfg = state.client_config.write().await;
+    set_model_hidden(&mut cfg.hidden_models, &name, !body.visible);
+    save_client_config(&cfg).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(ModelVisibilityResponse {
+        hidden_models: cfg.hidden_models.clone(),
+    }))
+}
+
+async fn post_model_visibility_bulk(
+    State(state): State<ProxyState>,
+    Json(body): Json<ModelVisibilityBulkBody>,
+) -> Result<Json<ModelVisibilityResponse>, (StatusCode, String)> {
+    let catalog_names = {
+        let app = state.shared_state.lock().await;
+        collect_unified_model_names(&app)
+    };
+    let mut cfg = state.client_config.write().await;
+    if body.visible {
+        cfg.hidden_models.clear();
+    } else {
+        cfg.hidden_models = catalog_names;
+    }
+    save_client_config(&cfg).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(ModelVisibilityResponse {
+        hidden_models: cfg.hidden_models.clone(),
+    }))
+}
+
 enum LocalModelAction {
     Delete,
     Load,
@@ -2094,13 +2237,9 @@ async fn model_show_info(state: &ProxyState, name: &str) -> Option<Value> {
         .resolve_ollama_backend_for_model(name)
         .await?;
     let client = state.ollama_http_client.read().await;
-    fetch_show_info(
-        &client,
-        backend.base_url(),
-        name,
-    )
-    .await
-    .ok()
+    fetch_show_info(&client, backend.base_url(), name)
+        .await
+        .ok()
 }
 
 async fn local_model_action(
@@ -2182,9 +2321,7 @@ async fn local_model_action(
             } else if !supports_generate(show_ref) {
                 return Err((
                     StatusCode::BAD_REQUEST,
-                    format!(
-                        "{name} is an embedding model — use /api/embed, not chat generation"
-                    ),
+                    format!("{name} is an embedding model — use /api/embed, not chat generation"),
                 ));
             } else {
                 let body = serde_json::json!({
@@ -2211,7 +2348,8 @@ async fn local_model_action(
         LocalModelAction::Unload => {
             let show = model_show_info(state, name).await;
             let show_ref = show.as_ref();
-            if is_embed_only(show_ref) || (supports_embed(show_ref) && !supports_generate(show_ref)) {
+            if is_embed_only(show_ref) || (supports_embed(show_ref) && !supports_generate(show_ref))
+            {
                 let body = serde_json::json!({
                     "model": name,
                     "input": ".",
@@ -2497,8 +2635,8 @@ async fn post_model_run_local(
             .backend_for_server(server_id)
             .await
             .is_some_and(|backend| backend.supports_ollama_native());
-        let use_ollama_catalog = engine.as_deref() == Some("ollama")
-            || (engine.is_none() && ollama_backend);
+        let use_ollama_catalog =
+            engine.as_deref() == Some("ollama") || (engine.is_none() && ollama_backend);
 
         if use_ollama_catalog {
             let model = body.model.trim().to_string();

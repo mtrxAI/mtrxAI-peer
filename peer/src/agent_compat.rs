@@ -121,7 +121,10 @@ pub fn normalize_chat_request_with_default(
             .get("model")
             .and_then(|m| m.as_str())
             .map(str::to_string),
-        stream: body.get("stream").and_then(|s| s.as_bool()).unwrap_or(false),
+        stream: body
+            .get("stream")
+            .and_then(|s| s.as_bool())
+            .unwrap_or(false),
         message_count: body
             .get("messages")
             .and_then(|m| m.as_array())
@@ -142,7 +145,11 @@ pub fn normalize_chat_request_with_default(
 
 /// Ensure OpenAI-compatible streaming requests ask for a final usage chunk.
 pub fn ensure_stream_usage(body: &mut Value) -> bool {
-    if !body.get("stream").and_then(|s| s.as_bool()).unwrap_or(false) {
+    if !body
+        .get("stream")
+        .and_then(|s| s.as_bool())
+        .unwrap_or(false)
+    {
         return false;
     }
     let Some(obj) = body.as_object_mut() else {
@@ -153,9 +160,7 @@ pub fn ensure_stream_usage(body: &mut Value) -> bool {
     if !obj.contains_key("stream_options") {
         changed = true;
     }
-    let stream_options = obj
-        .entry("stream_options")
-        .or_insert_with(|| json!({}));
+    let stream_options = obj.entry("stream_options").or_insert_with(|| json!({}));
     if let Some(opts) = stream_options.as_object_mut() {
         if !opts.contains_key("include_usage") {
             opts.insert("include_usage".to_string(), json!(true));
@@ -232,10 +237,7 @@ pub fn ensure_ollama_ctx_options(body: &mut Value) -> bool {
     ensure_ollama_ctx_options_with_default(body, default_num_ctx_from_env())
 }
 
-pub fn ensure_ollama_ctx_options_with_default(
-    body: &mut Value,
-    default_ctx: Option<u64>,
-) -> bool {
+pub fn ensure_ollama_ctx_options_with_default(body: &mut Value, default_ctx: Option<u64>) -> bool {
     let Some(default) = default_ctx.filter(|&n| n > 0) else {
         return false;
     };
@@ -389,7 +391,8 @@ fn normalize_tool(tool: &Value) -> Option<Value> {
             }
             if func.get("parameters").is_none() {
                 if let Some(schema) = func.get("input_schema").cloned() {
-                    func.as_object_mut()?.insert("parameters".into(), clean_schema(schema));
+                    func.as_object_mut()?
+                        .insert("parameters".into(), clean_schema(schema));
                     func.as_object_mut()?.remove("input_schema");
                 }
             }
@@ -397,10 +400,11 @@ fn normalize_tool(tool: &Value) -> Option<Value> {
         return Some(t);
     }
 
-    let name = tool
-        .get("name")
-        .and_then(|n| n.as_str())
-        .or_else(|| tool.get("function").and_then(|f| f.get("name")).and_then(|n| n.as_str()))?;
+    let name = tool.get("name").and_then(|n| n.as_str()).or_else(|| {
+        tool.get("function")
+            .and_then(|f| f.get("name"))
+            .and_then(|n| n.as_str())
+    })?;
 
     let description = tool
         .get("description")
@@ -466,7 +470,10 @@ pub fn chat_completion_to_responses(body: Value) -> Value {
 
         if let Some(tool_calls) = msg.get("tool_calls").and_then(|t| t.as_array()) {
             for tc in tool_calls {
-                let call_id = tc.get("id").and_then(|i| i.as_str()).unwrap_or("call_unknown");
+                let call_id = tc
+                    .get("id")
+                    .and_then(|i| i.as_str())
+                    .unwrap_or("call_unknown");
                 let name = tc
                     .get("function")
                     .and_then(|f| f.get("name"))
@@ -523,7 +530,11 @@ pub fn rewrite_chat_response(mut body: Value) -> (Value, AgentResponseSummary) {
         None => return (body, summary),
     };
 
-    if message.get("tool_calls").and_then(|t| t.as_array()).is_some_and(|a| !a.is_empty()) {
+    if message
+        .get("tool_calls")
+        .and_then(|t| t.as_array())
+        .is_some_and(|a| !a.is_empty())
+    {
         summary.had_structured_tool_calls = true;
         return (body, summary);
     }
@@ -791,7 +802,10 @@ fn responses_stream_from_tool_calls(tool_calls: &Value) -> Vec<String> {
     let mut lines = Vec::new();
 
     for (i, tc) in calls.iter().enumerate() {
-        let call_id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("call_unknown");
+        let call_id = tc
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("call_unknown");
         let name = tc
             .get("function")
             .and_then(|f| f.get("name"))
@@ -904,7 +918,8 @@ pub fn parse_chat_response_body(body: &str) -> Value {
     if trimmed.starts_with("data:") || trimmed.contains("\ndata:") {
         return sse_bytes_to_completion(trimmed);
     }
-    if trimmed.starts_with('{') && trimmed.contains("\"choices\"") && trimmed.contains("\"delta\"") {
+    if trimmed.starts_with('{') && trimmed.contains("\"choices\"") && trimmed.contains("\"delta\"")
+    {
         return sse_bytes_to_completion(trimmed);
     }
     serde_json::from_str(trimmed).unwrap_or(Value::Null)
@@ -1118,8 +1133,7 @@ impl SseTransformState {
     /// OpenAI-compatible clients (e.g. OpenCode) hang if the SSE stream never ends with `[DONE]`.
     pub fn finalize_stream(&mut self, done_sent: bool) -> Vec<String> {
         let mut out = self.flush_on_stream_end();
-        let already_done =
-            done_sent || out.iter().any(|line| line.trim() == "data: [DONE]");
+        let already_done = done_sent || out.iter().any(|line| line.trim() == "data: [DONE]");
         if !already_done {
             out.push("data: [DONE]".to_string());
         }
@@ -1179,7 +1193,10 @@ mod tests {
     #[test]
     fn ensure_ollama_predict_applies_default() {
         let mut body = json!({"model": "gemma4:e2b", "messages": []});
-        assert!(ensure_ollama_predict_options_with_default(&mut body, Some(8192)));
+        assert!(ensure_ollama_predict_options_with_default(
+            &mut body,
+            Some(8192)
+        ));
         assert_eq!(body["options"]["num_predict"], 8192);
     }
 
@@ -1189,7 +1206,10 @@ mod tests {
             "model": "gemma4:e2b",
             "options": {"num_predict": 2048}
         });
-        assert!(ensure_ollama_predict_options_with_default(&mut body, Some(8192)));
+        assert!(ensure_ollama_predict_options_with_default(
+            &mut body,
+            Some(8192)
+        ));
         assert_eq!(body["options"]["num_predict"], 8192);
     }
 
@@ -1199,7 +1219,10 @@ mod tests {
             "model": "gemma4:e2b",
             "options": {"num_predict": 16384}
         });
-        assert!(!ensure_ollama_predict_options_with_default(&mut body, Some(8192)));
+        assert!(!ensure_ollama_predict_options_with_default(
+            &mut body,
+            Some(8192)
+        ));
         assert_eq!(body["options"]["num_predict"], 16384);
     }
 
@@ -1209,21 +1232,30 @@ mod tests {
             "model": "gemma4:e2b",
             "options": {"num_predict": -1}
         });
-        assert!(!ensure_ollama_predict_options_with_default(&mut body, Some(8192)));
+        assert!(!ensure_ollama_predict_options_with_default(
+            &mut body,
+            Some(8192)
+        ));
         assert_eq!(body["options"]["num_predict"], -1);
     }
 
     #[test]
     fn ensure_ollama_predict_maps_max_tokens() {
         let mut body = json!({"model": "gemma4:e2b", "max_tokens": 512});
-        assert!(ensure_ollama_predict_options_with_default(&mut body, Some(8192)));
+        assert!(ensure_ollama_predict_options_with_default(
+            &mut body,
+            Some(8192)
+        ));
         assert_eq!(body["options"]["num_predict"], 512);
     }
 
     #[test]
     fn ensure_ollama_ctx_applies_default() {
         let mut body = json!({"model": "gemma4:e2b", "messages": []});
-        assert!(ensure_ollama_ctx_options_with_default(&mut body, Some(16384)));
+        assert!(ensure_ollama_ctx_options_with_default(
+            &mut body,
+            Some(16384)
+        ));
         assert_eq!(body["options"]["num_ctx"], 16384);
     }
 
@@ -1233,7 +1265,10 @@ mod tests {
             "model": "gemma4:e2b",
             "options": {"num_ctx": 32768}
         });
-        assert!(!ensure_ollama_ctx_options_with_default(&mut body, Some(16384)));
+        assert!(!ensure_ollama_ctx_options_with_default(
+            &mut body,
+            Some(16384)
+        ));
         assert_eq!(body["options"]["num_ctx"], 32768);
     }
 
@@ -1243,7 +1278,10 @@ mod tests {
             "model": "gemma4:e2b",
             "options": {"num_ctx": 4096}
         });
-        assert!(ensure_ollama_ctx_options_with_default(&mut body, Some(16384)));
+        assert!(ensure_ollama_ctx_options_with_default(
+            &mut body,
+            Some(16384)
+        ));
         assert_eq!(body["options"]["num_ctx"], 16384);
     }
 
@@ -1320,7 +1358,9 @@ mod tests {
         state.process_line(&format!("data: {}", chunk2));
 
         let out = state.process_line(r#"data: {"choices":[{"delta":{},"finish_reason":"stop"}]}"#);
-        assert!(out.iter().any(|line| line.contains("chat.completion.chunk")));
+        assert!(out
+            .iter()
+            .any(|line| line.contains("chat.completion.chunk")));
         assert!(out.iter().any(|line| line.contains("chatcmpl-test")));
     }
 
@@ -1504,8 +1544,13 @@ mod tests {
         });
         let (normalized, req_summary) = normalize_chat_request(request);
         assert!(req_summary.normalized);
-        assert_eq!(normalized["tools"][0]["function"]["name"], "run_in_terminal");
-        assert!(normalized["tools"][0]["function"]["parameters"].get("additionalProperties").is_none());
+        assert_eq!(
+            normalized["tools"][0]["function"]["name"],
+            "run_in_terminal"
+        );
+        assert!(normalized["tools"][0]["function"]["parameters"]
+            .get("additionalProperties")
+            .is_none());
 
         let upstream_text_response = json!({
             "choices": [{

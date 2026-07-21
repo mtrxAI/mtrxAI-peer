@@ -3,8 +3,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use std::time::Duration;
 
-const DEFAULT_GEO_URL: &str =
-    "http://ip-api.com/json/?fields=status,lat,lon,as,city,country";
+const DEFAULT_GEO_URL: &str = "http://ip-api.com/json/?fields=status,lat,lon,as,city,country";
 
 #[derive(Debug, Deserialize)]
 struct IpApiResponse {

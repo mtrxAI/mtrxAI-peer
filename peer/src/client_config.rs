@@ -7,7 +7,12 @@ pub const LEGACY_PEER_CONFIG_PATH: &str = "peer_config.json";
 pub const DEFAULT_PUBLIC_CLUSTER: &str = "europe";
 
 pub const PUBLIC_CONTINENTS: &[&str] = &[
-    "africa", "americas", "antarctica", "asia", "europe", "oceania",
+    "africa",
+    "americas",
+    "antarctica",
+    "asia",
+    "europe",
+    "oceania",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -153,13 +158,25 @@ pub struct CustomModelEntry {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-    #[serde(default, rename = "toolCalling", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "toolCalling",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub tool_calling: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vision: Option<bool>,
-    #[serde(default, rename = "maxInputTokens", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "maxInputTokens",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub max_input_tokens: Option<u64>,
-    #[serde(default, rename = "maxOutputTokens", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "maxOutputTokens",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub max_output_tokens: Option<u64>,
 }
 
@@ -196,10 +213,7 @@ pub struct LlmServerEntry {
 }
 
 pub fn is_custom_server_kind(kind: &str) -> bool {
-    matches!(
-        kind.to_lowercase().as_str(),
-        "custom" | "customendpoint"
-    )
+    matches!(kind.to_lowercase().as_str(), "custom" | "customendpoint")
 }
 
 pub fn is_inference_cell_kind(kind: &str) -> bool {
@@ -266,6 +280,9 @@ pub struct ClientConfig {
     pub llm_url: Option<String>,
     #[serde(default)]
     pub llm_servers: Vec<LlmServerEntry>,
+    /// Model names excluded from `/api/tags`, `/v1/models`, and cluster/swarm advertisement.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden_models: Vec<String>,
     #[serde(default = "default_auto_approve_run_model_request")]
     pub auto_approve_run_model_request: bool,
     #[serde(default = "default_auto_approve_inference_connections")]
@@ -273,7 +290,7 @@ pub struct ClientConfig {
     #[serde(default)]
     pub allow_unattested_peers: bool,
     /// Accept self-signed / invalid TLS for local LLM backends (e.g. inference-cell).
-    #[serde(default)]
+    #[serde(default = "default_ollama_tls_insecure")]
     pub ollama_tls_insecure: bool,
     /// Default Ollama `options.num_predict` cap (overrides env `MTRXAI_DEFAULT_NUM_PREDICT` when set).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -333,6 +350,10 @@ fn default_auto_approve_inference_connections() -> bool {
     true
 }
 
+fn default_ollama_tls_insecure() -> bool {
+    true
+}
+
 fn default_lobby_host() -> String {
     "127.0.0.1:8080".to_string()
 }
@@ -352,10 +373,11 @@ impl Default for ClientConfig {
             llm_backend: None,
             llm_url: None,
             llm_servers: Vec::new(),
+            hidden_models: Vec::new(),
             auto_approve_run_model_request: default_auto_approve_run_model_request(),
             auto_approve_inference_connections: default_auto_approve_inference_connections(),
             allow_unattested_peers: false,
-            ollama_tls_insecure: false,
+            ollama_tls_insecure: default_ollama_tls_insecure(),
             default_num_predict: None,
             default_num_ctx: None,
             proxy_token: None,
@@ -460,8 +482,7 @@ pub fn load_client_config() -> ClientConfig {
         serde_json::from_str::<ClientConfig>(&content).unwrap_or_default()
     } else if let Ok(content) = fs::read_to_string(LEGACY_PEER_CONFIG_PATH) {
         if let Ok(legacy) = serde_json::from_str::<LegacyPeerConfig>(&content) {
-            let setup_complete =
-                !legacy.service_id.is_empty() && !legacy.peer_id.is_empty();
+            let setup_complete = !legacy.service_id.is_empty() && !legacy.peer_id.is_empty();
             ClientConfig {
                 peer_id: Some(legacy.peer_id),
                 service_id: Some(legacy.service_id),
@@ -475,10 +496,11 @@ pub fn load_client_config() -> ClientConfig {
                 llm_backend: Some("ollama".to_string()),
                 llm_url: Some("http://127.0.0.1:11434".to_string()),
                 llm_servers: Vec::new(),
+                hidden_models: Vec::new(),
                 auto_approve_run_model_request: default_auto_approve_run_model_request(),
                 auto_approve_inference_connections: default_auto_approve_inference_connections(),
                 allow_unattested_peers: false,
-                ollama_tls_insecure: false,
+                ollama_tls_insecure: default_ollama_tls_insecure(),
                 default_num_predict: None,
                 default_num_ctx: None,
                 proxy_token: None,
@@ -638,7 +660,8 @@ pub async fn register_with_lobby(
     tx_store: &crate::tx_db::TxStore,
 ) -> anyhow::Result<RegisterPeerResponse> {
     let url = crate::lobby_url::lobby_api_url(lobby_host, "/api/peers/register");
-    let attestation = crate::attestation::maybe_build_attestation_proof(http_client, lobby_host).await?;
+    let attestation =
+        crate::attestation::maybe_build_attestation_proof(http_client, lobby_host).await?;
     let mut body = serde_json::json!({
         "peer_id": peer_id.and_then(|id| Uuid::parse_str(id).ok()),
         "service_name": service_name.filter(|s| !s.trim().is_empty()),
@@ -732,10 +755,7 @@ pub async fn list_clusters_with_lobby(
 ) -> anyhow::Result<Vec<ClusterListView>> {
     let url = crate::lobby_url::lobby_api_url(lobby_host, "/api/clusters");
     let mut req = http_client.get(&url);
-    if let (Some(peer_id), Some(store)) = (
-        peer_id.filter(|id| !id.trim().is_empty()),
-        tx_store,
-    ) {
+    if let (Some(peer_id), Some(store)) = (peer_id.filter(|id| !id.trim().is_empty()), tx_store) {
         let (timestamp, signature) = crate::security::build_ws_auth_query(store, peer_id)?;
         req = req.query(&[
             ("peer_id", peer_id),
@@ -862,7 +882,11 @@ pub fn default_public_cluster_name(config: &ClientConfig) -> String {
     std::env::var("MTRXAI_CLUSTER_NAME")
         .ok()
         .filter(|s| !s.trim().is_empty())
-        .or_else(|| std::env::var("MTRXAI_ROOM_NAME").ok().filter(|s| !s.trim().is_empty()))
+        .or_else(|| {
+            std::env::var("MTRXAI_ROOM_NAME")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+        })
         .or_else(|| config.cluster.clone())
         .unwrap_or_else(|| DEFAULT_PUBLIC_CLUSTER.to_string())
 }
@@ -914,9 +938,7 @@ fn docker_setup_deferred_message() {
     let port = env_non_empty("MTRXAI_PROXY_PORT")
         .and_then(|p| p.parse::<u16>().ok())
         .unwrap_or(11345);
-    println!(
-        "⏳ Peer registration pending — open http://127.0.0.1:{port}/ to complete setup"
-    );
+    println!("⏳ Peer registration pending — open http://127.0.0.1:{port}/ to complete setup");
     println!(
         "   Or set MTRXAI_SERVICE_NAME + MTRXAI_SERVICE_PASSWORD for auto-registration \
          (MTRXAI_PEER_ID for pre-provisioned peers)"
@@ -1058,13 +1080,8 @@ pub async fn bootstrap_docker_peer(
 
     match try_bootstrap_registration(http_client, config, lobby_cfg.as_ref(), tx_store).await {
         Ok(Some(reg)) => {
-            complete_docker_bootstrap_after_registration(
-                http_client,
-                config,
-                &reg,
-                &cluster_name,
-            )
-            .await?;
+            complete_docker_bootstrap_after_registration(http_client, config, &reg, &cluster_name)
+                .await?;
         }
         Ok(None) => docker_setup_deferred_message(),
         Err(e) => {
@@ -1175,7 +1192,10 @@ pub fn remove_cluster(config: &mut ClientConfig, cluster_id: &str) {
     }
 }
 
-pub fn find_cluster<'a>(config: &'a ClientConfig, cluster_id: &str) -> Option<&'a ClusterMembership> {
+pub fn find_cluster<'a>(
+    config: &'a ClientConfig,
+    cluster_id: &str,
+) -> Option<&'a ClusterMembership> {
     config.clusters.iter().find(|c| c.cluster_id == cluster_id)
 }
 
@@ -1183,7 +1203,10 @@ pub fn find_cluster_mut<'a>(
     config: &'a mut ClientConfig,
     cluster_id: &str,
 ) -> Option<&'a mut ClusterMembership> {
-    config.clusters.iter_mut().find(|c| c.cluster_id == cluster_id)
+    config
+        .clusters
+        .iter_mut()
+        .find(|c| c.cluster_id == cluster_id)
 }
 
 pub fn membership_from_response(
@@ -1194,7 +1217,10 @@ pub fn membership_from_response(
     ClusterMembership {
         cluster_id: resp.cluster_id.to_string(),
         name: resp.name.clone(),
-        visibility: resp.visibility.clone().or_else(|| Some("public".to_string())),
+        visibility: resp
+            .visibility
+            .clone()
+            .or_else(|| Some("public".to_string())),
         accepting_jobs: Some(true),
         connected: Some(true),
         room_secret: Some(stored.clone()),
@@ -1237,11 +1263,7 @@ pub fn find_swarm<'a>(config: &'a ClientConfig, swarm_id: &str) -> Option<&'a Sw
 }
 
 pub fn find_swarm_by_token(config: &ClientConfig, token: &str) -> Option<SwarmMembership> {
-    config
-        .swarms
-        .iter()
-        .find(|s| s.p2p_token == token)
-        .cloned()
+    config.swarms.iter().find(|s| s.p2p_token == token).cloned()
 }
 
 /// When the user creates or joins a swarm, enable libp2p transport if it was cluster-only.

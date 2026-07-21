@@ -1,10 +1,13 @@
 use crate::gpu::aggregate::aggregate_gpu_devices;
 use crate::gpu::command::{command_no_window, run_command};
-use crate::gpu::util::{infer_producer, nvidia_architecture_label, parse_optional_u8, parse_optional_u32};
+use crate::gpu::util::{
+    infer_producer, nvidia_architecture_label, parse_optional_u32, parse_optional_u8,
+};
 use crate::shared::{GpuDeviceInfo, GpuHostStatus};
+use std::path::Path;
 
-fn probe_cuda_version() -> Option<String> {
-    let text = run_command("nvidia-smi", &[])?;
+fn probe_cuda_version(nvidia_smi: &Path) -> Option<String> {
+    let text = run_command(nvidia_smi, &[])?;
     for line in text.lines() {
         if let Some(idx) = line.find("CUDA Version:") {
             let rest = line[idx + "CUDA Version:".len()..].trim();
@@ -14,8 +17,8 @@ fn probe_cuda_version() -> Option<String> {
     None
 }
 
-pub fn probe_nvidia_smi() -> Option<GpuHostStatus> {
-    let output = command_no_window("nvidia-smi")
+pub fn probe_nvidia_smi(nvidia_smi: &Path) -> Option<GpuHostStatus> {
+    let output = command_no_window(nvidia_smi)
         .args([
             "--query-gpu=index,name,pci.bus_id,driver_version,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw,power.limit,fan.speed,compute_cap",
             "--format=csv,noheader,nounits",
@@ -27,7 +30,7 @@ pub fn probe_nvidia_smi() -> Option<GpuHostStatus> {
         return None;
     }
 
-    let cuda_version = probe_cuda_version();
+    let cuda_version = probe_cuda_version(nvidia_smi);
     let text = String::from_utf8_lossy(&output.stdout);
     let mut devices = Vec::new();
 

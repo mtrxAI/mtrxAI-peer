@@ -38,9 +38,7 @@ pub fn cluster_effective_room_secret(cluster_id: &str, password: Option<&str>) -
 }
 
 fn cluster_password_from_membership(c: &crate::client_config::ClusterMembership) -> Option<&str> {
-    c.cluster_password
-        .as_deref()
-        .or(c.room_secret.as_deref())
+    c.cluster_password.as_deref().or(c.room_secret.as_deref())
 }
 
 pub fn room_secret_for_proxy(cfg: &ClientConfig, room_id: &str) -> Option<String> {
@@ -51,9 +49,7 @@ pub fn room_secret_for_proxy(cfg: &ClientConfig, room_id: &str) -> Option<String
         ));
     }
     for swarm in &cfg.swarms {
-        if e2ee_room_id_for_swarm_token(&swarm.p2p_token) == room_id
-            || swarm.swarm_id == room_id
-        {
+        if e2ee_room_id_for_swarm_token(&swarm.p2p_token) == room_id || swarm.swarm_id == room_id {
             return Some(swarm.p2p_token.clone());
         }
     }
@@ -61,7 +57,8 @@ pub fn room_secret_for_proxy(cfg: &ClientConfig, room_id: &str) -> Option<String
 }
 
 pub fn decode_provider_static_public(hex: &str) -> anyhow::Result<[u8; 32]> {
-    let bytes = hex::decode(hex.trim()).map_err(|e| anyhow::anyhow!("invalid provider pk hex: {e}"))?;
+    let bytes =
+        hex::decode(hex.trim()).map_err(|e| anyhow::anyhow!("invalid provider pk hex: {e}"))?;
     if bytes.len() != 32 {
         anyhow::bail!("provider static public key must be 32 bytes");
     }
@@ -102,12 +99,8 @@ pub async fn encrypt_proxy_request(
     let _static_keys = load_room_static_keypair(tx_store, room_id, &room_root)?;
     let ephemeral = generate_ephemeral_keypair();
     let ephemeral_secret = ephemeral.secret().to_bytes();
-    let session_key = derive_session_key_consumer(
-        ephemeral.secret(),
-        provider_static_public,
-        req_id,
-        room_id,
-    );
+    let session_key =
+        derive_session_key_consumer(ephemeral.secret(), provider_static_public, req_id, room_id);
     let plain = serde_json::to_vec(body)?;
     let enc = encrypt_payload(&session_key, req_id, path, room_id, &plain)?;
     let auth = proxy_auth_for_room(cfg, peer_id, room_id);
@@ -141,12 +134,8 @@ pub fn encrypt_proxy_request_chunk(
     plaintext: &[u8],
 ) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     let ephemeral_secret = x25519_dalek::StaticSecret::from(*consumer_ephemeral_secret);
-    let session_key = derive_session_key_consumer(
-        &ephemeral_secret,
-        provider_static_public,
-        req_id,
-        room_id,
-    );
+    let session_key =
+        derive_session_key_consumer(&ephemeral_secret, provider_static_public, req_id, room_id);
     let chunk_aad_path = chunk_path(path, seq);
     let enc = encrypt_payload(&session_key, req_id, &chunk_aad_path, room_id, plaintext)?;
     Ok((enc.nonce, enc.ciphertext))
@@ -194,12 +183,8 @@ pub async fn decrypt_proxy_chunk(
     let room_root = derive_room_root_key(&room_secret, room_id);
     let _static_keys = load_room_static_keypair(tx_store, room_id, &room_root)?;
     let ephemeral_secret = x25519_dalek::StaticSecret::from(*consumer_ephemeral_secret);
-    let session_key = derive_session_key_consumer(
-        &ephemeral_secret,
-        provider_static_public,
-        req_id,
-        room_id,
-    );
+    let session_key =
+        derive_session_key_consumer(&ephemeral_secret, provider_static_public, req_id, room_id);
     let chunk_aad_path = chunk_path(path, seq);
     let payload = EncryptedPayload {
         nonce: nonce.to_vec(),
@@ -236,12 +221,8 @@ pub async fn decrypt_proxy_response(
     let room_root = derive_room_root_key(&room_secret, room_id);
     let _static_keys = load_room_static_keypair(tx_store, room_id, &room_root)?;
     let ephemeral_secret = x25519_dalek::StaticSecret::from(*consumer_ephemeral_secret);
-    let session_key = derive_session_key_consumer(
-        &ephemeral_secret,
-        provider_static_public,
-        req_id,
-        room_id,
-    );
+    let session_key =
+        derive_session_key_consumer(&ephemeral_secret, provider_static_public, req_id, room_id);
     let payload = EncryptedPayload {
         nonce: nonce.clone(),
         ciphertext: ciphertext.clone(),
@@ -256,16 +237,12 @@ pub fn proxy_auth_for_room(
     room_id: &str,
 ) -> Option<ProxyAuthProof> {
     if let Some(c) = cfg.clusters.iter().find(|c| c.cluster_id == room_id) {
-        let secret = cluster_effective_room_secret(
-            &c.cluster_id,
-            cluster_password_from_membership(c),
-        );
+        let secret =
+            cluster_effective_room_secret(&c.cluster_id, cluster_password_from_membership(c));
         return Some(build_proxy_auth(&secret, peer_id));
     }
     for swarm in &cfg.swarms {
-        if e2ee_room_id_for_swarm_token(&swarm.p2p_token) == room_id
-            || swarm.swarm_id == room_id
-        {
+        if e2ee_room_id_for_swarm_token(&swarm.p2p_token) == room_id || swarm.swarm_id == room_id {
             return Some(build_proxy_auth(&swarm.p2p_token, peer_id));
         }
     }

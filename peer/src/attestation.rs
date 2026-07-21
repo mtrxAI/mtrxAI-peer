@@ -1,8 +1,8 @@
+use chrono::Utc;
 use mtrxai_attestation::{
     hash_file, sign_claims, signing_key_from_seed_hex, AttestationChallenge, AttestationClaims,
     AttestationProof,
 };
-use chrono::Utc;
 use uuid::Uuid;
 
 pub fn attestation_skip_enabled() -> bool {
@@ -19,9 +19,7 @@ pub fn log_startup_diagnostics() {
     let skip = attestation_skip_enabled();
     let embedded = attestation_key_embedded();
     let build_id = embedded_build_id();
-    println!(
-        " Attestation: skip={skip} embedded_key={embedded} build_id={build_id}"
-    );
+    println!(" Attestation: skip={skip} embedded_key={embedded} build_id={build_id}");
     if !skip && !embedded {
         eprintln!(
             " ⚠️ This binary cannot attest — use an official release build (e.g. docker.io/cosmicentropy/mtrxai-client:<version>)"
@@ -81,7 +79,9 @@ pub async fn fetch_challenge(
 pub fn build_proof(challenge: &AttestationChallenge) -> anyhow::Result<AttestationProof> {
     let secret = embedded_attestation_secret();
     if secret.trim().is_empty() {
-        anyhow::bail!("MTRXAI_ATTESTATION_SECRET not embedded; set MTRXAI_ATTESTATION_SKIP=1 for local dev");
+        anyhow::bail!(
+            "MTRXAI_ATTESTATION_SECRET not embedded; set MTRXAI_ATTESTATION_SKIP=1 for local dev"
+        );
     }
 
     let signing_key = signing_key_from_seed_hex(secret)

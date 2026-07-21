@@ -53,7 +53,11 @@ pub async fn scan_local_servers(client: &Client) -> Vec<DiscoveredServer> {
         let client = client.clone();
         let url = probe.url.to_string();
         let paths: Vec<String> = probe.paths.iter().map(|p| p.to_string()).collect();
-        let kinds: Vec<String> = probe.candidate_kinds.iter().map(|k| k.to_string()).collect();
+        let kinds: Vec<String> = probe
+            .candidate_kinds
+            .iter()
+            .map(|k| k.to_string())
+            .collect();
         handles.push(tokio::spawn(async move {
             probe_port(&client, &url, &paths, &kinds).await
         }));

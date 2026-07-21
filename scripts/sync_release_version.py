@@ -21,6 +21,10 @@ TAURI_CONF = ROOT / "desktop" / "src-tauri" / "tauri.conf.json"
 SIBLING_CARGO = [
     ROOT.parent / "mtrxAI-server" / "server" / "Cargo.toml",
     ROOT.parent / "mtrxAI-common" / "mtrxai-attestation" / "Cargo.toml",
+    ROOT.parent / "mtrxAI-common" / "mtrxai-protocol" / "Cargo.toml",
+    ROOT.parent / "mtrxAI-common" / "mtrxai-icell-api" / "Cargo.toml",
+    ROOT.parent / "mtrxAI-common" / "mtrxai-auth" / "Cargo.toml",
+    ROOT.parent / "mtrxAI-icell" / "Cargo.toml",
 ]
 
 

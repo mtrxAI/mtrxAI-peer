@@ -1,8 +1,8 @@
 mod common;
 
+use http_body_util::BodyExt;
 use peer::client_config::{ClientConfig, CustomModelEntry, LlmServerEntry};
 use peer::llm_proxy::{proxy_router, ProxyState};
-use http_body_util::BodyExt;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};

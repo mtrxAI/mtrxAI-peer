@@ -1,9 +1,9 @@
 use crate::client_config::{
     resolve_swarm_bootnodes, swarm_accepts_jobs, swarm_is_connected, ClientConfig, SwarmMembership,
 };
-use crate::network_scheduler::swarm_schedule_fields;
 use crate::llm_proxy::ProxyState;
 use crate::network_catalog::sync_unified_network_models;
+use crate::network_scheduler::swarm_schedule_fields;
 use crate::p2p_manager::P2pManager;
 use crate::shared::{
     ModelStartAction, PeerConnectionView, PeerDirection, PeerModerationAction, PeerRegistry,
@@ -200,12 +200,8 @@ impl SwarmManager {
             return Ok(());
         }
 
-        let bootnodes = resolve_swarm_bootnodes(
-            &self.proxy_state.http_client,
-            &self.lobby_host,
-            swarm,
-        )
-        .await;
+        let bootnodes =
+            resolve_swarm_bootnodes(&self.proxy_state.http_client, &self.lobby_host, swarm).await;
 
         let (tx, rx) = mpsc::channel(32);
         let (model_tx, model_rx) = mpsc::channel(32);
@@ -266,10 +262,7 @@ impl SwarmManager {
                 None => {
                     let _ = cmd
                         .response_tx
-                        .send(Err(format!(
-                            "No swarm advertises model {}",
-                            cmd.model
-                        )))
+                        .send(Err(format!("No swarm advertises model {}", cmd.model)))
                         .await;
                     return;
                 }
@@ -303,10 +296,7 @@ impl SwarmManager {
             PeerModerationAction::Report { peer_id, reason } => {
                 if let Some(tx) = self.swarm_moderation_txs.values().next() {
                     let _ = tx
-                        .send(PeerModerationAction::Report {
-                            peer_id,
-                            reason,
-                        })
+                        .send(PeerModerationAction::Report { peer_id, reason })
                         .await;
                 }
             }
@@ -433,8 +423,7 @@ pub async fn sync_swarm_status_for_proxy(proxy_state: &ProxyState) {
     drop(cfg);
     let live = proxy_state.shared_state.lock().await.swarms.clone();
     let cfg = proxy_state.client_config.read().await;
-    proxy_state.shared_state.lock().await.swarms =
-        build_swarm_statuses(&cfg, &swarms_cfg, &live);
+    proxy_state.shared_state.lock().await.swarms = build_swarm_statuses(&cfg, &swarms_cfg, &live);
 }
 
 async fn find_swarm_for_model(
@@ -448,10 +437,7 @@ async fn find_swarm_for_model(
             if m.get("name").and_then(|n| n.as_str()) != Some(model) {
                 continue;
             }
-            let count = m
-                .get("_peer_count")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(1);
+            let count = m.get("_peer_count").and_then(|v| v.as_u64()).unwrap_or(1);
             match &best {
                 Some((_, best_count)) if *best_count >= count => {}
                 _ => best = Some((swarm_id.clone(), count)),
@@ -478,26 +464,33 @@ pub async fn sync_swarm_peer_connections(
         .token_totals_by_counterparty()
         .await
         .unwrap_or_default();
-    let peer_rows: Vec<(String, Option<String>, Option<String>, String, u64, bool, u64)> =
-        peer_registry
-            .lock()
-            .await
-            .values()
-            .map(|p| {
-                (
-                    p.peer_id.clone(),
-                    p.cluster_id.clone(),
-                    p.swarm_id.clone(),
-                    match p.direction {
-                        PeerDirection::Inbound => "inbound".to_string(),
-                        PeerDirection::Outbound => "outbound".to_string(),
-                    },
-                    p.connected_at.elapsed().as_secs(),
-                    p.data_channel_open,
-                    p.attestation_flags,
-                )
-            })
-            .collect();
+    let peer_rows: Vec<(
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+        u64,
+        bool,
+        u64,
+    )> = peer_registry
+        .lock()
+        .await
+        .values()
+        .map(|p| {
+            (
+                p.peer_id.clone(),
+                p.cluster_id.clone(),
+                p.swarm_id.clone(),
+                match p.direction {
+                    PeerDirection::Inbound => "inbound".to_string(),
+                    PeerDirection::Outbound => "outbound".to_string(),
+                },
+                p.connected_at.elapsed().as_secs(),
+                p.data_channel_open,
+                p.attestation_flags,
+            )
+        })
+        .collect();
     let views: Vec<PeerConnectionView> = {
         let stats_guard = peer_stats.lock().ok();
         peer_rows
@@ -512,23 +505,21 @@ pub async fn sync_swarm_peer_connections(
                     data_channel_open,
                     attestation_flags,
                 )| {
-                let lifetime = lifetime_totals.get(&peer_id).copied().unwrap_or(0);
-                let stats = stats_guard
-                    .as_ref()
-                    .map(|g| g.snapshot(&peer_id, lifetime));
-                let blocked = blocked.contains(&peer_id);
-                PeerConnectionView {
-                    peer_id,
-                    cluster_id,
-                    swarm_id,
-                    direction,
-                    since_secs,
-                    data_channel_open,
-                    blocked,
-                    attestation_flags,
-                    stats,
-                }
-            },
+                    let lifetime = lifetime_totals.get(&peer_id).copied().unwrap_or(0);
+                    let stats = stats_guard.as_ref().map(|g| g.snapshot(&peer_id, lifetime));
+                    let blocked = blocked.contains(&peer_id);
+                    PeerConnectionView {
+                        peer_id,
+                        cluster_id,
+                        swarm_id,
+                        direction,
+                        since_secs,
+                        data_channel_open,
+                        blocked,
+                        attestation_flags,
+                        stats,
+                    }
+                },
             )
             .collect()
     };

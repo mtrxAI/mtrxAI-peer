@@ -21,7 +21,11 @@ pub fn model_start_topic(p2p_token: &str) -> String {
 }
 
 pub fn dht_peer_record_key(p2p_token: &str, peer_id: &str) -> String {
-    format!("mtrxai/swarm/{}/peer/{}", token_namespace(p2p_token), peer_id)
+    format!(
+        "mtrxai/swarm/{}/peer/{}",
+        token_namespace(p2p_token),
+        peer_id
+    )
 }
 
 /// Messages sent over libp2p streams (same framing as WebRTC DataChannelMessage).

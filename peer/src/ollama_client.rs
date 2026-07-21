@@ -65,20 +65,24 @@ pub fn model_is_fully_gpu_loaded(model: &Value) -> bool {
     status.get("gpu_pct").and_then(|v| v.as_u64()) == Some(100)
 }
 
-/// True when a model may be advertised to cluster/swarm peers: unloaded, or loaded 100% on GPU.
-/// Partial CPU/GPU offload (mixed) and other loaded non-GPU states are excluded.
+/// True when a model may be advertised to cluster/swarm peers.
+///
+/// Only **loaded** models are advertised. GPU vs CPU residency stays in `_status`
+/// for peer ranking — loaded CPU/mixed/remote models must remain discoverable.
 pub fn model_is_advertisable_for_network(model: &Value) -> bool {
-    let Some(status) = model.get("_status") else {
+    let name_ok = model
+        .get("name")
+        .and_then(|n| n.as_str())
+        .map(|n| !n.trim().is_empty())
+        .unwrap_or(false);
+    if !name_ok {
         return false;
-    };
-    if !status
-        .get("loaded")
+    }
+    model
+        .get("_status")
+        .and_then(|s| s.get("loaded"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
-    {
-        return true;
-    }
-    model_is_fully_gpu_loaded(model)
 }
 
 pub fn unloaded_status() -> ModelRuntimeStatus {
@@ -111,7 +115,10 @@ pub fn runtime_status_from_ps(ps: &Value) -> ModelRuntimeStatus {
     }
 }
 
-pub async fn fetch_installed_models(client: &Client, ollama_url: &str) -> anyhow::Result<Vec<Value>> {
+pub async fn fetch_installed_models(
+    client: &Client,
+    ollama_url: &str,
+) -> anyhow::Result<Vec<Value>> {
     let url = format!("{}/api/tags", ollama_url.trim_end_matches('/'));
     let res = client.get(&url).send().await?;
     let json: Value = res.json().await?;
@@ -162,11 +169,7 @@ pub async fn fetch_show_info(
 pub fn model_has_capability(show: &Value, cap: &str) -> bool {
     show.get("capabilities")
         .and_then(|c| c.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str())
-                .any(|s| s == cap)
-        })
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).any(|s| s == cap))
         .unwrap_or(false)
 }
 
@@ -262,7 +265,9 @@ pub async fn build_model_catalog(
     show_cache: &mut HashMap<String, Value>,
     gpu_probe: GpuProbeMode,
 ) -> anyhow::Result<ModelCatalogSnapshot> {
-    let installed = fetch_installed_models(client, ollama_url).await.unwrap_or_default();
+    let installed = fetch_installed_models(client, ollama_url)
+        .await
+        .unwrap_or_default();
     let running = fetch_running_models(client, ollama_url)
         .await
         .unwrap_or_default();
@@ -508,7 +513,8 @@ mod tests {
     #[test]
     fn fully_gpu_loaded_rejects_mixed_and_cpu() {
         let mixed = json!({ "name": "a", "_status": { "loaded": true, "processor": "mixed", "gpu_pct": 50 } });
-        let cpu = json!({ "name": "b", "_status": { "loaded": true, "processor": "cpu", "gpu_pct": 0 } });
+        let cpu =
+            json!({ "name": "b", "_status": { "loaded": true, "processor": "cpu", "gpu_pct": 0 } });
         assert!(!model_is_fully_gpu_loaded(&mixed));
         assert!(!model_is_fully_gpu_loaded(&cpu));
     }
@@ -521,21 +527,20 @@ mod tests {
     }
 
     #[test]
-    fn advertisable_includes_unloaded_and_full_gpu() {
+    fn advertisable_requires_loaded_includes_cpu_mixed_remote() {
         let unloaded = json!({ "name": "a", "_status": { "loaded": false, "processor": "cpu", "gpu_pct": 0 } });
         let gpu = json!({ "name": "b", "_status": { "loaded": true, "processor": "gpu", "gpu_pct": 100 } });
-        assert!(model_is_advertisable_for_network(&unloaded));
+        let mixed = json!({ "name": "c", "_status": { "loaded": true, "processor": "mixed", "gpu_pct": 40 } });
+        let cpu =
+            json!({ "name": "d", "_status": { "loaded": true, "processor": "cpu", "gpu_pct": 0 } });
+        let remote = json!({ "name": "e", "_status": { "loaded": true, "processor": "remote" } });
+        assert!(!model_is_advertisable_for_network(&unloaded));
         assert!(model_is_advertisable_for_network(&gpu));
-    }
-
-    #[test]
-    fn advertisable_rejects_mixed_cpu_gpu_and_remote() {
-        let mixed = json!({ "name": "a", "_status": { "loaded": true, "processor": "mixed", "gpu_pct": 40 } });
-        let cpu = json!({ "name": "b", "_status": { "loaded": true, "processor": "cpu", "gpu_pct": 0 } });
-        let remote = json!({ "name": "c", "_status": { "loaded": true, "processor": "remote" } });
-        assert!(!model_is_advertisable_for_network(&mixed));
-        assert!(!model_is_advertisable_for_network(&cpu));
-        assert!(!model_is_advertisable_for_network(&remote));
-        assert!(!model_is_advertisable_for_network(&json!({ "name": "d" })));
+        assert!(model_is_advertisable_for_network(&mixed));
+        assert!(model_is_advertisable_for_network(&cpu));
+        assert!(model_is_advertisable_for_network(&remote));
+        assert!(!model_is_advertisable_for_network(&json!({ "name": "f" })));
+        assert!(!model_is_advertisable_for_network(&json!({ "name": "" })));
+        assert!(!model_is_advertisable_for_network(&json!({})));
     }
 }

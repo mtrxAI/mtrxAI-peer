@@ -1,5 +1,5 @@
-use crate::gpu_history::unix_now;
 use crate::gpu::util::{avg_optional_u8, infer_producer};
+use crate::gpu_history::unix_now;
 use crate::shared::{GpuDeviceInfo, GpuHostStatus};
 use std::collections::HashSet;
 
@@ -64,10 +64,7 @@ pub fn aggregate_gpu_devices(
 }
 
 fn host_producer_from_devices(devices: &[GpuDeviceInfo], names: &[String]) -> Option<String> {
-    let mut producers: Vec<String> = devices
-        .iter()
-        .filter_map(|d| d.producer.clone())
-        .collect();
+    let mut producers: Vec<String> = devices.iter().filter_map(|d| d.producer.clone()).collect();
     if producers.is_empty() {
         producers = names
             .iter()

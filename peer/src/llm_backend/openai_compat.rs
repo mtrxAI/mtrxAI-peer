@@ -13,9 +13,7 @@ pub struct OpenAiCompatBackend {
 
 impl OpenAiCompatBackend {
     pub async fn health_check(&self) -> Result<()> {
-        let mut req = self
-            .client
-            .get(format!("{}/v1/models", self.base_url));
+        let mut req = self.client.get(format!("{}/v1/models", self.base_url));
         req = crate::llm_backend::auth::apply_api_key(req, self.api_key.as_deref());
         let resp = req.send().await?;
         if resp.status().is_success() {
@@ -32,9 +30,7 @@ impl OpenAiCompatBackend {
     }
 
     pub async fn list_models(&self, gpu_probe: GpuProbeMode) -> Result<ModelCatalogSnapshot> {
-        let mut req = self
-            .client
-            .get(format!("{}/v1/models", self.base_url));
+        let mut req = self.client.get(format!("{}/v1/models", self.base_url));
         req = crate::llm_backend::auth::apply_api_key(req, self.api_key.as_deref());
         let resp = req.send().await?;
         let json: Value = resp.json().await.map_err(|e| anyhow::anyhow!(e))?;

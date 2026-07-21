@@ -1,9 +1,9 @@
 mod common;
 
-use peer::client_config::{ClientConfig, LlmServerEntry};
-use peer::llm_proxy::{proxy_router, ProxyState};
 use common::test_app_state;
 use http_body_util::BodyExt;
+use peer::client_config::{ClientConfig, LlmServerEntry};
+use peer::llm_proxy::{proxy_router, ProxyState};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -162,7 +162,9 @@ async fn v1_chat_completions_rewrites_prose_prefixed_non_streaming_tool_call() {
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("content-type", "application/json")
-                .body(axum::body::Body::from(serde_json::to_string(&request).unwrap()))
+                .body(axum::body::Body::from(
+                    serde_json::to_string(&request).unwrap(),
+                ))
                 .unwrap(),
         )
         .await

@@ -23,8 +23,7 @@ fn e2ee_envelope_round_trip() {
     let room_id = "room-test";
     let room_secret = "shared-secret";
     let room_root = peer::crypto::derive_room_root_key(room_secret, room_id);
-    let static_keys =
-        peer::crypto::load_room_static_keypair(&store, room_id, &room_root).unwrap();
+    let static_keys = peer::crypto::load_room_static_keypair(&store, room_id, &room_root).unwrap();
     let ephemeral = peer::crypto::generate_ephemeral_keypair();
     let req_id = "req-1";
     let path = "/api/chat";
@@ -36,8 +35,7 @@ fn e2ee_envelope_round_trip() {
         room_id,
     );
     let enc = peer::crypto::encrypt_payload(&session_key, req_id, path, room_id, plain).unwrap();
-    let dec =
-        peer::crypto::decrypt_payload(&session_key, req_id, path, room_id, &enc).unwrap();
+    let dec = peer::crypto::decrypt_payload(&session_key, req_id, path, room_id, &enc).unwrap();
     assert_eq!(dec, plain);
 }
 
@@ -84,10 +82,8 @@ fn swarm_e2ee_room_id_shared_across_peers() {
     let store_b = peer::tx_db::TxStore::open_in_memory().unwrap();
     let secret = peer::proxy_e2ee::room_secret_for_proxy(&cfg_a, &room_a).unwrap();
     let room_root = peer::crypto::derive_room_root_key(&secret, &room_a);
-    let keys_a =
-        peer::crypto::load_room_static_keypair(&store_a, &room_a, &room_root).unwrap();
-    let keys_b =
-        peer::crypto::load_room_static_keypair(&store_b, &room_a, &room_root).unwrap();
+    let keys_a = peer::crypto::load_room_static_keypair(&store_a, &room_a, &room_root).unwrap();
+    let keys_b = peer::crypto::load_room_static_keypair(&store_b, &room_a, &room_root).unwrap();
     assert_eq!(keys_a.public_key, keys_b.public_key);
     assert_eq!(keys_a.secret_key, keys_b.secret_key);
 }
@@ -170,10 +166,8 @@ fn stale_room_keys_migrate_to_deterministic_seed() {
     stale[32..].fill(2);
     store.put_room_key_sync(room_id, &stale).unwrap();
 
-    let keys =
-        peer::crypto::load_room_static_keypair(&store, room_id, &room_root).unwrap();
-    let expected =
-        peer::crypto::load_room_static_keypair(&store, room_id, &room_root).unwrap();
+    let keys = peer::crypto::load_room_static_keypair(&store, room_id, &room_root).unwrap();
+    let expected = peer::crypto::load_room_static_keypair(&store, room_id, &room_root).unwrap();
     assert_eq!(keys.public_key, expected.public_key);
     assert_ne!(keys.public_key[..], stale[..32]);
 }

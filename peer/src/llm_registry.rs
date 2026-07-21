@@ -33,11 +33,13 @@ pub struct LlmServerView {
     pub kind: String,
     pub url: String,
     pub label: Option<String>,
+    /// User intent: server is configured for use by this peer (persisted).
     pub attached: bool,
+    /// Live reachability from the latest health probe (not persisted).
+    pub connected: bool,
     pub order: u32,
     pub source: String,
     pub model_count: usize,
-    pub healthy: bool,
     pub has_api_key: bool,
     pub has_admin_token: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -56,6 +58,19 @@ struct ServerRuntime {
     backend: Arc<LlmBackend>,
     show_cache: HashMap<String, Value>,
     inference_engine: Option<String>,
+    /// Last known health-probe result for this runtime.
+    connected: bool,
+}
+
+/// Result of probing all attached LLM server backends.
+#[derive(Debug, Clone, Default)]
+pub struct AttachedHealthSnapshot {
+    pub any_connected: bool,
+    pub connected_count: usize,
+    pub attached_count: usize,
+    pub changed: bool,
+    pub newly_connected: Vec<String>,
+    pub newly_disconnected: Vec<String>,
 }
 
 struct RegistryInner {
@@ -84,11 +99,7 @@ impl LlmServerRegistry {
         }
     }
 
-    async fn load_api_key(
-        &self,
-        server_id: &str,
-        config: &ClientConfig,
-    ) -> Result<Option<String>> {
+    async fn load_api_key(&self, server_id: &str, config: &ClientConfig) -> Result<Option<String>> {
         self.tx_store
             .get_server_api_key(
                 server_id,
@@ -114,8 +125,7 @@ impl LlmServerRegistry {
         } else {
             None
         };
-        let backend =
-            LlmBackend::from_server_entry_probed(entry, api_key, client).await?;
+        let backend = LlmBackend::from_server_entry_probed(entry, api_key, client).await?;
         Ok((backend, inference_engine))
     }
 
@@ -151,6 +161,7 @@ impl LlmServerRegistry {
                     backend: Arc::new(backend),
                     show_cache: HashMap::new(),
                     inference_engine,
+                    connected: true,
                 },
             );
         }
@@ -196,11 +207,7 @@ impl LlmServerRegistry {
         id
     }
 
-    pub async fn attach(
-        &self,
-        config: &mut ClientConfig,
-        id: &str,
-    ) -> Result<()> {
+    pub async fn attach(&self, config: &mut ClientConfig, id: &str) -> Result<()> {
         let idx = config
             .llm_servers
             .iter()
@@ -234,6 +241,7 @@ impl LlmServerRegistry {
                     backend: Arc::new(backend),
                     show_cache: HashMap::new(),
                     inference_engine,
+                    connected: true,
                 },
             );
         }
@@ -283,10 +291,9 @@ impl LlmServerRegistry {
         for (server_id, _) in server_ids {
             let (backend, entry, mut show_cache) = {
                 let inner = self.inner.read().await;
-                let runtime = inner
-                    .servers
-                    .get(&server_id)
-                    .ok_or_else(|| anyhow!("server runtime missing"))?;
+                let Some(runtime) = inner.servers.get(&server_id) else {
+                    continue;
+                };
                 (
                     runtime.backend.clone(),
                     runtime.entry.clone(),
@@ -294,14 +301,24 @@ impl LlmServerRegistry {
                 )
             };
 
-            let snapshot = backend.list_models(&mut show_cache, gpu_probe).await?;
-
-            {
-                let mut inner = self.inner.write().await;
-                if let Some(runtime) = inner.servers.get_mut(&server_id) {
-                    runtime.show_cache = show_cache;
+            let snapshot = match backend.list_models(&mut show_cache, gpu_probe).await {
+                Ok(snapshot) => {
+                    let mut inner = self.inner.write().await;
+                    if let Some(runtime) = inner.servers.get_mut(&server_id) {
+                        runtime.show_cache = show_cache;
+                        runtime.connected = true;
+                    }
+                    snapshot
                 }
-            }
+                Err(e) => {
+                    eprintln!("⚠️ Skipping LLM server {server_id} during catalog rebuild: {e}");
+                    let mut inner = self.inner.write().await;
+                    if let Some(runtime) = inner.servers.get_mut(&server_id) {
+                        runtime.connected = false;
+                    }
+                    continue;
+                }
+            };
 
             pairs.push((entry, snapshot));
         }
@@ -349,7 +366,11 @@ impl LlmServerRegistry {
             .and_then(|s| s.inference_engine.clone())
     }
 
-    pub fn catalog_source_for(kind: &str, inference_engine: Option<&str>, ollama_backend: bool) -> &'static str {
+    pub fn catalog_source_for(
+        kind: &str,
+        inference_engine: Option<&str>,
+        ollama_backend: bool,
+    ) -> &'static str {
         if !is_inference_cell_kind(kind) {
             return "ollama";
         }
@@ -444,9 +465,7 @@ impl LlmServerRegistry {
                         m.models
                             .iter()
                             .filter(|model| {
-                                model
-                                    .get("_source_server")
-                                    .and_then(|v| v.as_str())
+                                model.get("_source_server").and_then(|v| v.as_str())
                                     == Some(entry.id.as_str())
                             })
                             .count()
@@ -457,8 +476,12 @@ impl LlmServerRegistry {
             } else {
                 0
             };
-            let healthy = if entry.attached {
-                inner.servers.contains_key(&entry.id)
+            let connected = if entry.attached {
+                inner
+                    .servers
+                    .get(&entry.id)
+                    .map(|r| r.connected)
+                    .unwrap_or(false)
             } else {
                 false
             };
@@ -477,22 +500,19 @@ impl LlmServerRegistry {
             let ollama_backend = runtime
                 .map(|r| r.backend.supports_ollama_native())
                 .unwrap_or(false);
-            let catalog_source = Self::catalog_source_for(
-                &entry.kind,
-                inference_engine.as_deref(),
-                ollama_backend,
-            )
-            .to_string();
+            let catalog_source =
+                Self::catalog_source_for(&entry.kind, inference_engine.as_deref(), ollama_backend)
+                    .to_string();
             views.push(LlmServerView {
                 id: entry.id.clone(),
                 kind: entry.kind.clone(),
                 url: entry.url.clone(),
                 label: entry.label.clone(),
                 attached: entry.attached,
+                connected,
                 order: entry.order,
                 source: entry.source.clone(),
                 model_count,
-                healthy,
                 has_api_key,
                 has_admin_token,
                 api_type: entry.api_type.clone(),
@@ -506,12 +526,69 @@ impl LlmServerRegistry {
         views
     }
 
+    /// Probe each attached backend independently and update per-server `connected`.
+    pub async fn probe_attached_connectivity(&self) -> AttachedHealthSnapshot {
+        let backends: Vec<(String, Arc<LlmBackend>)> = {
+            let inner = self.inner.read().await;
+            inner
+                .servers
+                .iter()
+                .map(|(id, runtime)| (id.clone(), runtime.backend.clone()))
+                .collect()
+        };
+
+        let attached_count = backends.len();
+        let mut newly_connected = Vec::new();
+        let mut newly_disconnected = Vec::new();
+        let mut connected_count = 0usize;
+
+        for (server_id, backend) in backends {
+            let ok = backend.health_check().await.is_ok();
+            let mut inner = self.inner.write().await;
+            let Some(runtime) = inner.servers.get_mut(&server_id) else {
+                continue;
+            };
+            let was = runtime.connected;
+            runtime.connected = ok;
+            if ok {
+                connected_count += 1;
+                if !was {
+                    newly_connected.push(server_id);
+                }
+            } else if was {
+                newly_disconnected.push(server_id);
+            }
+        }
+
+        AttachedHealthSnapshot {
+            any_connected: connected_count > 0,
+            connected_count,
+            attached_count,
+            changed: !newly_connected.is_empty() || !newly_disconnected.is_empty(),
+            newly_connected,
+            newly_disconnected,
+        }
+    }
+
     pub async fn health_check_attached(&self) -> Result<()> {
-        let inner = self.inner.read().await;
-        for runtime in inner.servers.values() {
-            runtime.backend.health_check().await?;
+        let snapshot = self.probe_attached_connectivity().await;
+        if snapshot.attached_count == 0 {
+            return Err(anyhow!("No LLM servers attached"));
+        }
+        if !snapshot.any_connected {
+            return Err(anyhow!("No connected LLM servers"));
         }
         Ok(())
+    }
+
+    pub async fn connected_count(&self) -> usize {
+        self.inner
+            .read()
+            .await
+            .servers
+            .values()
+            .filter(|s| s.connected)
+            .count()
     }
 
     pub async fn synthesize_merged_tags(&self) -> Result<Value> {
@@ -606,28 +683,34 @@ pub fn merge_catalog_snapshots(
     }
 }
 
-/// Returns models suitable for cluster/swarm advertisement (excludes local-only servers
-/// and models that are partially loaded on CPU; includes unloaded and 100% GPU models).
+/// Returns models suitable for cluster/swarm advertisement (excludes local-only servers,
+/// user-hidden models, and unloaded models). Only loaded models are announced;
+/// loaded CPU/mixed/remote stay discoverable; GPU residency stays in `_status` for ranking.
 pub fn filter_models_for_cluster_advertisement(
     snapshot: &MergedCatalog,
     config: &ClientConfig,
 ) -> (Vec<Value>, Vec<String>) {
     use std::collections::HashSet;
 
-    let hidden: HashSet<&str> = config
+    let local_only_servers: HashSet<&str> = config
         .llm_servers
         .iter()
         .filter(|s| !s.advertise_to_cluster)
         .map(|s| s.id.as_str())
         .collect();
+    let hidden_names: HashSet<&str> = config.hidden_models.iter().map(|s| s.as_str()).collect();
     let models: Vec<Value> = snapshot
         .models
         .iter()
         .filter(|m| {
+            let name = m.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            if !name.is_empty() && hidden_names.contains(name) {
+                return false;
+            }
             let server_ok = m
                 .get("_source_server")
                 .and_then(|v| v.as_str())
-                .map(|id| !hidden.contains(id))
+                .map(|id| !local_only_servers.contains(id))
                 .unwrap_or(true);
             server_ok && crate::ollama_client::model_is_advertisable_for_network(m)
         })
@@ -779,7 +862,10 @@ mod tests {
             LlmServerRegistry::catalog_source_for("inference-cell", None, false),
             "huggingface"
         );
-        assert_eq!(LlmServerRegistry::catalog_source_for("ollama", None, false), "ollama");
+        assert_eq!(
+            LlmServerRegistry::catalog_source_for("ollama", None, false),
+            "ollama"
+        );
     }
 
     #[test]
@@ -792,14 +878,22 @@ mod tests {
             "inference-cell",
             Some("llamacpp")
         ));
-        assert!(LlmServerRegistry::inference_cell_uses_hf_catalog("inference-cell", None));
-        assert!(!LlmServerRegistry::inference_cell_uses_hf_catalog("ollama", None));
+        assert!(LlmServerRegistry::inference_cell_uses_hf_catalog(
+            "inference-cell",
+            None
+        ));
+        assert!(!LlmServerRegistry::inference_cell_uses_hf_catalog(
+            "ollama", None
+        ));
     }
 
     #[test]
     fn merge_first_wins_on_duplicate_names() {
         let ordered = vec![
-            (sample_entry("a", "ollama", 0), snapshot_with_models(&["llama3", "phi3"])),
+            (
+                sample_entry("a", "ollama", 0),
+                snapshot_with_models(&["llama3", "phi3"]),
+            ),
             (
                 sample_entry("b", "vllm", 1),
                 snapshot_with_models(&["llama3", "mistral"]),
@@ -809,7 +903,12 @@ mod tests {
         assert_eq!(merged.model_names, vec!["llama3", "phi3", "mistral"]);
         assert_eq!(merged.collisions.len(), 1);
         assert_eq!(merged.collisions[0].name, "llama3");
-        assert!(merged.models[0].get("_source_kind").and_then(|v| v.as_str()) == Some("ollama"));
+        assert!(
+            merged.models[0]
+                .get("_source_kind")
+                .and_then(|v| v.as_str())
+                == Some("ollama")
+        );
     }
 
     #[test]
@@ -863,7 +962,28 @@ mod tests {
     }
 
     #[test]
-    fn filter_excludes_mixed_cpu_gpu_keeps_unloaded_and_full_gpu() {
+    fn filter_excludes_hidden_model_names() {
+        let shared = sample_entry("shared", "ollama", 0);
+        let ordered = vec![(
+            shared,
+            ModelCatalogSnapshot {
+                models: vec![gpu_loaded_model("llama3"), gpu_loaded_model("secret")],
+                model_names: vec!["llama3".to_string(), "secret".to_string()],
+                gpu_host: None,
+            },
+        )];
+        let merged = merge_catalog_snapshots(&ordered);
+        let config = ClientConfig {
+            llm_servers: ordered.iter().map(|(e, _)| e.clone()).collect(),
+            hidden_models: vec!["secret".to_string()],
+            ..ClientConfig::default()
+        };
+        let (_advertised, names) = filter_models_for_cluster_advertisement(&merged, &config);
+        assert_eq!(names, vec!["llama3"]);
+    }
+
+    #[test]
+    fn filter_includes_loaded_cpu_mixed_and_remote_excludes_unloaded() {
         let merged = merged_with_status_models(vec![
             json!({
                 "name": "unloaded",
@@ -884,8 +1004,7 @@ mod tests {
             }),
         ]);
         let config = ClientConfig::default();
-        let (advertised, names) = filter_models_for_cluster_advertisement(&merged, &config);
-        assert_eq!(names, vec!["unloaded", "gpu-ready"]);
-        assert_eq!(advertised.len(), 2);
+        let (_advertised, names) = filter_models_for_cluster_advertisement(&merged, &config);
+        assert_eq!(names, vec!["mixed", "cpu-loaded", "gpu-ready", "remote"]);
     }
 }

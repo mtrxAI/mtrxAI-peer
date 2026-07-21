@@ -137,7 +137,7 @@ Introduce a wrapper type (new module `client/src/config_iac.rs`) separate from r
 | LLM server definitions, attach/detach, custom models | Ollama tag discovery (rebuilt on apply via `sync_from_config`) |
 | Inference settings (`default_num_*`, auto-approve) | Currently loaded Ollama models (`load`/`unload`) |
 | Blocked peer list | Transaction history |
-| Optional identity block | `LlmServerView.healthy`, `model_count` |
+| Optional identity block | `LlmServerView.connected`, `model_count` |
 
 **Local models** = configured LLM backends (`llmServers`) plus custom model entries. Ollama models remain runtime-discovered after the server URL is attached; no new static model list is needed for v1.
 
