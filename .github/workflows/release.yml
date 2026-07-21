@@ -428,6 +428,8 @@ jobs:
             fi
             cp -f "$f" "${dest}/${base}"
             echo "Staged ${folder}/${base} <- ${f}"
+          # Portable binaries live at dist/<artifact>/{mtrxai,mtrxai.exe}. Do not
+          # match nested copies (e.g. macOS .app/Contents/MacOS/mtrxai).
           done < <(find dist -type f \( \
             -name 'allowed_build.json' -o \
             -name '*.AppImage' -o \
@@ -436,8 +438,8 @@ jobs:
             -name '*.msi' -o \
             -name '*setup.exe' -o \
             -name '*.tar.gz' -o \
-            -name 'mtrxai' -o \
-            -name 'mtrxai.exe' \
+            -path 'dist/*/mtrxai' -o \
+            -path 'dist/*/mtrxai.exe' \
           \) -print0)
 
           shopt -s nullglob
