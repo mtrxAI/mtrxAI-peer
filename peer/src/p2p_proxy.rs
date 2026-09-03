@@ -158,7 +158,7 @@ pub async fn dispatch_swarm_proxy_request(
                 let local_peer_id = proxy_state.shared_state.lock().await.peer_id.clone();
                 let _ = proxy_state
                     .tx_store
-                    .record_local_report(
+                    .record_swarm_report(
                         req_id.clone(),
                         "provider",
                         &local_peer_id,

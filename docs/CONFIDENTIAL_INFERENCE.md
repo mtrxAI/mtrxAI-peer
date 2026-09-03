@@ -2,6 +2,8 @@
 
 Deploy mtrxAI as a **zero-trust inference provider** using NVIDIA Hopper (H100/H200) Confidential Computing inside an Intel TDX or AMD SEV-SNP confidential VM.
 
+Attestation flags, icell’s role, and lobby vs client TEE flux: **[ATTESTATION.md](./ATTESTATION.md)**.
+
 ## Architecture
 
 ```

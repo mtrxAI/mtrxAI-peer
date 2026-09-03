@@ -1,7 +1,8 @@
 mod common;
 
 use peer::agent_compat::{
-    normalize_chat_request, rewrite_chat_response, sse_bytes_to_completion, SseTransformState,
+    normalize_chat_request, rewrite_chat_response, sse_bytes_to_completion, AgentResponseFormat,
+    SseTransformState,
 };
 use serde_json::json;
 
@@ -47,7 +48,7 @@ fn end_to_end_cursor_style_request_and_text_tool_response() {
 
 #[test]
 fn streaming_suppresses_json_content_until_finish() {
-    let mut state = SseTransformState::default();
+    let mut state = SseTransformState::with_options(AgentResponseFormat::ChatCompletions, true);
     let chunk1 = json!({"choices": [{"delta": {"content": "{\""}, "finish_reason": null}]});
     assert!(state.process_line(&format!("data: {}", chunk1)).is_empty());
 

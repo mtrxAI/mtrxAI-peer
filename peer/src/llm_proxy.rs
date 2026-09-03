@@ -21,19 +21,42 @@ use tracing::Level;
 
 use crate::agent_compat::{
     apply_ollama_body_defaults_with_default, chat_completion_to_responses,
-    chat_response_content_type, log_request_summary, log_response_summary,
-    normalize_chat_request_with_default, parse_chat_response_body, rewrite_chat_response,
-    AgentDebugSnapshot, AgentResponseFormat, SseTransformState,
+    chat_response_content_type, ensure_stream_usage, format_sse_event, log_request_summary,
+    log_response_summary, normalize_chat_request_with_default, parse_chat_response_body,
+    rewrite_chat_response, AgentDebugSnapshot, AgentResponseFormat, SseTransformState,
+};
+use crate::token_usage::{
+    accumulate_and_parse_usage, extract_openai_stream_text, parse_usage_from_buffer,
+    parse_usage_from_value, record_local_inference_activity, TokenUsage,
 };
 use crate::client_config::ClientConfig;
 use crate::llm_registry::RegistryHandle;
 use crate::shared::{NetworkMode, PeerRegistry, ProxyRequestCommand, RuntimeEventTx, SharedState};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+fn model_names_equivalent(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    let a_base = a.strip_suffix(".gguf").unwrap_or(a);
+    let b_base = b.strip_suffix(".gguf").unwrap_or(b);
+    a_base == b_base
+}
+
+fn find_network_model<'a>(network_models: &'a [Value], model: &str) -> Option<&'a Value> {
+    network_models.iter().find(|m| {
+        m.get("name")
+            .and_then(|n| n.as_str())
+            .is_some_and(|name| model_names_equivalent(name, model))
+    })
+}
+
+fn normalize_openai_model_name(model: &str) -> String {
+    model.strip_suffix(".gguf").unwrap_or(model).to_string()
+}
+
 fn cluster_id_for_model(network_models: &[Value], model: &str) -> Option<String> {
-    network_models
-        .iter()
-        .find(|m| m.get("name").and_then(|n| n.as_str()) == Some(model))
+    find_network_model(network_models, model)
         .and_then(|m| {
             m.get("_cluster_id")
                 .or_else(|| {
@@ -54,9 +77,7 @@ fn cluster_id_for_model(network_models: &[Value], model: &str) -> Option<String>
 }
 
 fn swarm_id_for_model(network_models: &[Value], model: &str) -> Option<String> {
-    network_models
-        .iter()
-        .find(|m| m.get("name").and_then(|n| n.as_str()) == Some(model))
+    find_network_model(network_models, model)
         .and_then(|m| {
             m.get("_swarm_id")
                 .or_else(|| {
@@ -243,19 +264,32 @@ impl ProxyState {
 
         // Remote proxy clients send Ollama `/api/chat`. OpenAI-compat backends (inference-cell /
         // llama.cpp) only expose `/v1/chat/completions` — match the local HTTP translation path.
-        let translate_ollama_chat = !backend.supports_ollama_native() && path == "/api/chat";
+        let openai_compat = !backend.supports_ollama_native();
+        let translate_ollama_chat = openai_compat && path == "/api/chat";
+        let normalize_v1_model = openai_compat && path == "/v1/chat/completions";
 
-        let (forward_path, forward_body, model_label) = if translate_ollama_chat {
+        let (forward_path, forward_body, model_label, passthrough_raw) = if translate_ollama_chat {
             let mut normalized = body.clone();
-            let m_norm = model.strip_suffix(".gguf").unwrap_or(model);
-            normalized["model"] = serde_json::Value::String(m_norm.to_string());
+            let m_norm = normalize_openai_model_name(model);
+            normalized["model"] = serde_json::Value::String(m_norm.clone());
             (
                 "/v1/chat/completions".to_string(),
                 normalized,
-                m_norm.to_string(),
+                m_norm,
+                false,
             )
+        } else if normalize_v1_model {
+            let mut normalized = body.clone();
+            let m_norm = normalize_openai_model_name(model);
+            normalized["model"] = serde_json::Value::String(m_norm.clone());
+            (path.to_string(), normalized, m_norm, true)
         } else {
-            (path.to_string(), body.clone(), model.to_string())
+            (
+                path.to_string(),
+                body.clone(),
+                model.to_string(),
+                true,
+            )
         };
 
         let url = format!("{}{}", backend.base_url(), forward_path);
@@ -281,7 +315,7 @@ impl ProxyState {
         let model_name = model.to_string();
 
         Ok(Box::pin(async_stream::stream! {
-            if !translate_ollama_chat {
+            if passthrough_raw {
                 while let Some(item) = stream_up.next().await {
                     yield item;
                 }
@@ -310,12 +344,16 @@ impl ProxyState {
                     .and_then(|m| m.get("content"))
                     .and_then(|c| c.as_str())
                     .unwrap_or("");
-                let out = serde_json::json!({
+                let mut out = serde_json::json!({
                     "model": model_name,
                     "created_at": chrono::Utc::now().to_rfc3339(),
                     "message": { "role": "assistant", "content": content },
                     "done": true,
                 });
+                if let Some(usage) = parse_usage_from_value(&json) {
+                    out["prompt_eval_count"] = serde_json::json!(usage.prompt_tokens);
+                    out["eval_count"] = serde_json::json!(usage.completion_tokens);
+                }
                 yield Ok(axum::body::Bytes::from(
                     serde_json::to_vec(&out).unwrap_or_default(),
                 ));
@@ -323,6 +361,8 @@ impl ProxyState {
             }
 
             let mut buf = String::new();
+            let mut latest_usage: Option<TokenUsage> = None;
+            let mut saw_done = false;
             while let Some(item) = stream_up.next().await {
                 let chunk = match item {
                     Ok(c) => c,
@@ -340,36 +380,35 @@ impl ProxyState {
                     }
                     let payload = line.trim_start_matches("data:").trim();
                     if payload == "[DONE]" {
-                        let done = serde_json::json!({"model": model_name, "done": true});
-                        yield Ok(axum::body::Bytes::from(
-                            serde_json::to_string(&done).unwrap_or_default() + "\n",
-                        ));
-                        return;
+                        saw_done = true;
+                        continue;
                     }
                     let parsed: serde_json::Value =
                         serde_json::from_str(payload).unwrap_or(serde_json::Value::Null);
-                    let delta = parsed
-                        .get("choices")
-                        .and_then(|c| c.as_array())
-                        .and_then(|arr| arr.first())
-                        .and_then(|c0| c0.get("delta"))
-                        .and_then(|d| d.get("content"))
-                        .and_then(|c| c.as_str())
-                        .unwrap_or("");
-                    if delta.is_empty() {
+                    if let Some(usage) = parse_usage_from_value(&parsed) {
+                        latest_usage = Some(usage);
                         continue;
                     }
-                    let out = serde_json::json!({
-                        "model": model_name,
-                        "message": { "role": "assistant", "content": delta },
-                        "done": false
-                    });
-                    yield Ok(axum::body::Bytes::from(
-                        serde_json::to_string(&out).unwrap_or_default() + "\n",
-                    ));
+                    if let Some(delta) = extract_openai_stream_text(&parsed) {
+                        let out = serde_json::json!({
+                            "model": model_name,
+                            "message": { "role": "assistant", "content": delta },
+                            "done": false
+                        });
+                        yield Ok(axum::body::Bytes::from(
+                            serde_json::to_string(&out).unwrap_or_default() + "\n",
+                        ));
+                    }
+                }
+                if saw_done {
+                    break;
                 }
             }
-            let done = serde_json::json!({"model": model_name, "done": true});
+            let mut done = serde_json::json!({"model": model_name, "done": true});
+            if let Some(usage) = latest_usage {
+                done["prompt_eval_count"] = serde_json::json!(usage.prompt_tokens);
+                done["eval_count"] = serde_json::json!(usage.completion_tokens);
+            }
             yield Ok(axum::body::Bytes::from(
                 serde_json::to_string(&done).unwrap_or_default() + "\n",
             ));
@@ -697,10 +736,12 @@ async fn handle_agent_chat_request(
 
     if let Some(model_val) = normalized_body.get("model").and_then(|m| m.as_str()) {
         actual_model = model_val.to_string();
-        let lock = state.shared_state.lock().await;
-        if !lock.local_models.contains(&actual_model) {
-            is_remote = true;
-        }
+        is_remote = state
+            .llm_registry
+            .inner
+            .resolve_backend(model_val)
+            .await
+            .is_none();
     }
 
     if is_remote {
@@ -710,11 +751,20 @@ async fn handle_agent_chat_request(
             normalized_body,
             stream,
             response_format,
+            req_summary.tool_count > 0,
         )
         .await;
     }
 
-    forward_agent_local(state, &body_json, &actual_model, stream, response_format).await
+    forward_agent_local(
+        state,
+        &body_json,
+        &actual_model,
+        stream,
+        response_format,
+        req_summary.tool_count > 0,
+    )
+    .await
 }
 
 async fn dispatch_remote_proxy(
@@ -785,6 +835,7 @@ async fn forward_agent_remote(
     normalized_body: Value,
     stream: bool,
     response_format: AgentResponseFormat,
+    request_has_tools: bool,
 ) -> Result<Response, (StatusCode, String)> {
     if crate::security::redact_logs() {
         crate::security::log_redact::agent_remote_route(actual_model);
@@ -808,7 +859,8 @@ async fn forward_agent_remote(
     if stream {
         let agent_debug = state.agent_debug.clone();
         let stream = async_stream::stream! {
-            let mut sse_state = SseTransformState::with_response_format(response_format);
+            let mut sse_state =
+                SseTransformState::with_options(response_format, request_has_tools);
             let mut line_buf = String::new();
             let mut done_sent = false;
             while let Some(res) = rx.recv().await {
@@ -825,12 +877,12 @@ async fn forward_agent_remote(
                                 if out_line.trim() == "data: [DONE]" {
                                     done_sent = true;
                                 }
-                                yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format!("{}\n", out_line)));
+                                yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format_sse_event(&out_line)));
                             }
                         }
                     }
                     Err(e) => {
-                        yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format!("data: {{\"error\":\"{}\"}}\n\n", e)));
+                        yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format_sse_event(&format!("data: {{\"error\":\"{}\"}}", e))));
                         break;
                     }
                 }
@@ -844,11 +896,11 @@ async fn forward_agent_remote(
                     if out_line.trim() == "data: [DONE]" {
                         done_sent = true;
                     }
-                    yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format!("{}\n", out_line)));
+                    yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format_sse_event(&out_line)));
                 }
             }
             for out_line in sse_state.finalize_stream(done_sent) {
-                yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format!("{}\n", out_line)));
+                yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format_sse_event(&out_line)));
             }
             if let Some(summary) = sse_state.take_summary() {
                 log_response_summary(&summary);
@@ -900,6 +952,7 @@ async fn forward_agent_local(
     model: &str,
     stream: bool,
     response_format: AgentResponseFormat,
+    request_has_tools: bool,
 ) -> Result<Response, (StatusCode, String)> {
     let backend = require_backend_for_model(state, Some(model)).await?;
     let path = backend.chat_path_for_model(model);
@@ -929,16 +982,23 @@ async fn forward_agent_local(
 
     if stream {
         let agent_debug = state.agent_debug.clone();
+        let tx_store = state.tx_store.clone();
+        let shared_state = state.shared_state.clone();
+        let model_name = model.to_string();
         let byte_stream = resp.bytes_stream();
         let stream = async_stream::stream! {
-            let mut sse_state = SseTransformState::with_response_format(response_format);
+            let mut sse_state =
+                SseTransformState::with_options(response_format, request_has_tools);
             let mut line_buf = String::new();
+            let mut usage_buf = String::new();
             let mut done_sent = false;
             let mut byte_stream = byte_stream;
             while let Some(chunk_result) = byte_stream.next().await {
                 match chunk_result {
                     Ok(bytes) => {
-                        line_buf.push_str(&String::from_utf8_lossy(&bytes));
+                        let chunk_str = String::from_utf8_lossy(&bytes);
+                        let _ = accumulate_and_parse_usage(&mut usage_buf, &chunk_str);
+                        line_buf.push_str(&chunk_str);
                         while let Some(pos) = line_buf.find('\n') {
                             let line = line_buf.drain(..=pos).collect::<String>();
                             let trimmed = line.trim_end();
@@ -946,7 +1006,7 @@ async fn forward_agent_local(
                                 done_sent = true;
                             }
                             for out_line in sse_state.process_line(trimmed) {
-                                yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format!("{}\n", out_line)));
+                                yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format_sse_event(&out_line)));
                             }
                         }
                     }
@@ -958,16 +1018,21 @@ async fn forward_agent_local(
             }
             if !line_buf.trim().is_empty() {
                 for out_line in sse_state.process_line(line_buf.trim_end()) {
-                    yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format!("{}\n", out_line)));
+                    yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format_sse_event(&out_line)));
                 }
             }
             for out_line in sse_state.finalize_stream(done_sent) {
-                yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format!("{}\n", out_line)));
+                yield Ok::<_, std::io::Error>(axum::body::Bytes::from(format_sse_event(&out_line)));
             }
             if let Some(summary) = sse_state.take_summary() {
                 log_response_summary(&summary);
                 let mut debug = agent_debug.lock().await;
                 debug.response = Some(summary);
+            }
+            let usage = parse_usage_from_buffer(&usage_buf).unwrap_or_default();
+            let peer_id = shared_state.lock().await.peer_id.clone();
+            if !peer_id.is_empty() {
+                record_local_inference_activity(tx_store, peer_id, model_name, usage);
             }
         };
 
@@ -987,12 +1052,24 @@ async fn forward_agent_local(
             format!("Failed to read LLM response: {}", e),
         )
     })?;
+    let usage = parse_usage_from_buffer(&String::from_utf8_lossy(&bytes)).unwrap_or_default();
     let parsed: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     let (rewritten, resp_summary) = rewrite_chat_response(parsed);
     log_response_summary(&resp_summary);
     {
         let mut debug = state.agent_debug.lock().await;
         debug.response = Some(resp_summary);
+    }
+    {
+        let peer_id = state.shared_state.lock().await.peer_id.clone();
+        if !peer_id.is_empty() {
+            record_local_inference_activity(
+                state.tx_store.clone(),
+                peer_id,
+                model.to_string(),
+                usage,
+            );
+        }
     }
 
     let output = match response_format {
@@ -1032,10 +1109,12 @@ async fn handle_proxy_request(
             .unwrap_or(false);
         if let Some(model_val) = req_body.get("model").and_then(|m| m.as_str()) {
             actual_model = model_val.to_string();
-            let lock = state.shared_state.lock().await;
-            if !lock.local_models.contains(&actual_model) {
-                is_remote = true;
-            }
+            is_remote = state
+                .llm_registry
+                .inner
+                .resolve_backend(model_val)
+                .await
+                .is_none();
         }
     }
 
@@ -1045,12 +1124,16 @@ async fn handle_proxy_request(
             actual_model
         );
 
+        let mut remote_body =
+            serde_json::from_str::<serde_json::Value>(&body).unwrap_or(serde_json::Value::Null);
+        ensure_stream_usage(&mut remote_body);
+
         let mut rx = dispatch_remote_proxy(
             &state.shared_state,
             &state.client_config,
             &actual_model,
             path.to_string(),
-            serde_json::from_str(&body).unwrap_or(serde_json::Value::Null),
+            remote_body,
         )
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e))?;
@@ -1119,13 +1202,42 @@ async fn handle_proxy_request(
 
             if status >= 200 && status < 300 {
                 if is_stream {
-                    let stream = resp.bytes_stream();
-                    let stream_body = Body::from_stream(stream);
+                    let model_name = actual_model.clone();
+                    let tx_store = state.tx_store.clone();
+                    let shared_state = state.shared_state.clone();
+                    let upstream_stream = resp.bytes_stream();
+                    let stream_body = async_stream::stream! {
+                        let mut usage_buf = String::new();
+                        let mut byte_stream = upstream_stream;
+                        while let Some(chunk_result) = byte_stream.next().await {
+                            match chunk_result {
+                                Ok(bytes) => {
+                                    let chunk_str = String::from_utf8_lossy(&bytes);
+                                    let _ = accumulate_and_parse_usage(&mut usage_buf, &chunk_str);
+                                    yield Ok(bytes);
+                                }
+                                Err(e) => {
+                                    yield Err(e);
+                                    break;
+                                }
+                            }
+                        }
+                        let usage = parse_usage_from_buffer(&usage_buf).unwrap_or_default();
+                        let peer_id = shared_state.lock().await.peer_id.clone();
+                        if !peer_id.is_empty() && !model_name.is_empty() {
+                            record_local_inference_activity(
+                                tx_store,
+                                peer_id,
+                                model_name,
+                                usage,
+                            );
+                        }
+                    };
 
                     return Ok(Response::builder()
                         .status(status)
                         .header("Content-Type", "application/x-ndjson")
-                        .body(stream_body)
+                        .body(Body::from_stream(stream_body))
                         .unwrap());
                 }
 
@@ -1135,6 +1247,19 @@ async fn handle_proxy_request(
                         format!("Failed to read LLM response: {}", e),
                     )
                 })?;
+                let usage =
+                    parse_usage_from_buffer(&String::from_utf8_lossy(&bytes)).unwrap_or_default();
+                {
+                    let peer_id = state.shared_state.lock().await.peer_id.clone();
+                    if !peer_id.is_empty() && !actual_model.is_empty() {
+                        record_local_inference_activity(
+                            state.tx_store.clone(),
+                            peer_id,
+                            actual_model.clone(),
+                            usage,
+                        );
+                    }
+                }
 
                 let response_ct = if upstream_ct.contains("application/json") {
                     "application/json"
@@ -1160,7 +1285,7 @@ async fn handle_proxy_request(
     }
 }
 
-async fn chat_completion(
+pub async fn chat_completion(
     State(state): State<ProxyState>,
     body: String,
 ) -> Result<Response, (StatusCode, String)> {
@@ -1265,6 +1390,18 @@ async fn forward_ollama_chat_via_openai(
 
     if !stream {
         let json: serde_json::Value = upstream.json().await.unwrap_or(serde_json::json!({}));
+        let usage = parse_usage_from_buffer(&json.to_string()).unwrap_or_default();
+        {
+            let peer_id = state.shared_state.lock().await.peer_id.clone();
+            if !peer_id.is_empty() {
+                record_local_inference_activity(
+                    state.tx_store.clone(),
+                    peer_id,
+                    model.unwrap_or("model").to_string(),
+                    usage,
+                );
+            }
+        }
         let content = json
             .get("choices")
             .and_then(|c| c.as_array())
@@ -1302,15 +1439,20 @@ async fn forward_ollama_chat_via_openai(
 
     let mut stream_up = upstream.bytes_stream();
     let model_name = model.unwrap_or("model").to_string();
+    let tx_store = state.tx_store.clone();
+    let shared_state = state.shared_state.clone();
     let out_stream = async_stream::stream! {
         use futures_util::StreamExt;
         let mut buf = String::new();
+        let mut usage_buf = String::new();
         while let Some(item) = stream_up.next().await {
             let chunk = match item {
                 Ok(c) => c,
                 Err(_) => break,
             };
-            buf.push_str(&String::from_utf8_lossy(&chunk));
+            let chunk_str = String::from_utf8_lossy(&chunk);
+            let _ = accumulate_and_parse_usage(&mut usage_buf, &chunk_str);
+            buf.push_str(&chunk_str);
             while let Some(idx) = buf.find('\n') {
                 let line = buf[..idx].trim().to_string();
                 buf = buf[idx+1..].to_string();
@@ -1319,28 +1461,36 @@ async fn forward_ollama_chat_via_openai(
                 if payload == "[DONE]" {
                     let done = serde_json::json!({"model": model_name, "done": true});
                     yield Ok::<_, std::io::Error>(axum::body::Bytes::from(serde_json::to_string(&done).unwrap() + "\n"));
+                    let usage = parse_usage_from_buffer(&usage_buf).unwrap_or_default();
+                    let peer_id = shared_state.lock().await.peer_id.clone();
+                    if !peer_id.is_empty() {
+                        record_local_inference_activity(
+                            tx_store.clone(),
+                            peer_id,
+                            model_name.clone(),
+                            usage,
+                        );
+                    }
                     return;
                 }
                 let parsed: serde_json::Value = serde_json::from_str(payload).unwrap_or(serde_json::Value::Null);
-                let delta = parsed
-                    .get("choices")
-                    .and_then(|c| c.as_array())
-                    .and_then(|arr| arr.first())
-                    .and_then(|c0| c0.get("delta"))
-                    .and_then(|d| d.get("content"))
-                    .and_then(|c| c.as_str())
-                    .unwrap_or("");
-                if delta.is_empty() { continue; }
-                let out = serde_json::json!({
-                    "model": model_name,
-                    "message": { "role": "assistant", "content": delta },
-                    "done": false
-                });
-                yield Ok::<_, std::io::Error>(axum::body::Bytes::from(serde_json::to_string(&out).unwrap() + "\n"));
+                if let Some(delta) = extract_openai_stream_text(&parsed) {
+                    let out = serde_json::json!({
+                        "model": model_name,
+                        "message": { "role": "assistant", "content": delta },
+                        "done": false
+                    });
+                    yield Ok::<_, std::io::Error>(axum::body::Bytes::from(serde_json::to_string(&out).unwrap() + "\n"));
+                }
             }
         }
         let done = serde_json::json!({"model": model_name, "done": true});
         yield Ok::<_, std::io::Error>(axum::body::Bytes::from(serde_json::to_string(&done).unwrap() + "\n"));
+        let usage = parse_usage_from_buffer(&usage_buf).unwrap_or_default();
+        let peer_id = shared_state.lock().await.peer_id.clone();
+        if !peer_id.is_empty() {
+            record_local_inference_activity(tx_store, peer_id, model_name, usage);
+        }
     };
 
     Ok(Response::builder()
@@ -1842,4 +1992,33 @@ async fn v1_responses(
     body: String,
 ) -> Result<Response, (StatusCode, String)> {
     handle_agent_chat_request(&state, body, AgentResponseFormat::ResponsesApi).await
+}
+
+#[cfg(test)]
+mod model_match_tests {
+    use super::{model_names_equivalent, normalize_openai_model_name};
+    use serde_json::json;
+
+    #[test]
+    fn model_names_match_with_or_without_gguf_suffix() {
+        assert!(model_names_equivalent(
+            "gemma-4-12b-it-qat-q4_0.gguf",
+            "gemma-4-12b-it-qat-q4_0"
+        ));
+        assert!(!model_names_equivalent("llama3", "mistral"));
+    }
+
+    #[test]
+    fn normalize_openai_model_strips_gguf() {
+        assert_eq!(
+            normalize_openai_model_name("gemma-4-12b-it-qat-q4_0.gguf"),
+            "gemma-4-12b-it-qat-q4_0"
+        );
+    }
+
+    #[test]
+    fn find_network_model_matches_alias() {
+        let models = vec![json!({"name": "gemma-4-12b-it-qat-q4_0.gguf"})];
+        assert!(super::find_network_model(&models, "gemma-4-12b-it-qat-q4_0").is_some());
+    }
 }

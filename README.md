@@ -23,12 +23,27 @@ cargo build -p peer
 cargo test -p peer -p peer-tests
 ```
 
-## Docker
+## Docker (peer + icell)
 
-Build from the **org root** (`mtrxAI-org/`):
+**Beginner deploy-and-use guide** (official images, dashboard, models, troubleshooting):
+
+[mtrxAI-infra/deploy/production/peer/README.md](../mtrxAI-infra/deploy/production/peer/README.md)
+
+That stack runs **mtrxAI peer** plus a sealed **icell** (Ollama backend). Icell exists so attestation is not limited to the peer binary — see [docs/ATTESTATION.md](docs/ATTESTATION.md). Install Docker first: [Get Docker](https://docs.docker.com/get-docker/).
+
+Quick start (from `mtrxAI-infra/deploy/production/peer`):
 
 ```bash
-docker build -f peer/Dockerfile -t mtrxai/mtrx-peer .
+cp .env.example .env   # set MTRXAI_LOBBY_HOST and MTRXAI_P2P_ANNOUNCE_HOST
+docker compose up -d
+```
+
+Dashboard: `http://localhost:11345/`
+
+To **build** the peer image yourself, run this from the **org root** (sibling of `mtrxAI-peer/` and `mtrxAI-common/`):
+
+```bash
+docker build -f mtrxAI-peer/Dockerfile -t mtrxai/mtrx-peer .
 ```
 
 ## CI

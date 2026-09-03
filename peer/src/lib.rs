@@ -1,6 +1,7 @@
 pub mod agent_compat;
 pub mod api;
 pub mod attestation;
+pub mod chat_models;
 pub mod client_config;
 pub mod cluster_dc_e2ee;
 pub mod cluster_manager;

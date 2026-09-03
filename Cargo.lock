@@ -3464,7 +3464,7 @@ dependencies = [
 
 [[package]]
 name = "mtrxai-attestation"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -3480,18 +3480,18 @@ dependencies = [
 
 [[package]]
 name = "mtrxai-auth"
-version = "0.2.1"
+version = "0.3.0"
 
 [[package]]
 name = "mtrxai-icell-api"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "mtrxai-protocol"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3500,7 +3500,7 @@ dependencies = [
 
 [[package]]
 name = "mtrxai-tauri"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "peer",
@@ -4212,7 +4212,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "peer"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "aes-gcm",
  "anyhow",

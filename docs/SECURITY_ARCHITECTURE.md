@@ -2,7 +2,7 @@
 
 This document describes how mtrxAI components communicate today, where authentication and encryption happen, and known gaps with suggested improvements. It is intended for operators, security reviewers, and contributors planning hardening work (including TLS for client APIs and lobby-issued certificates).
 
-**Related docs:** [CONFIDENTIAL_INFERENCE.md](./CONFIDENTIAL_INFERENCE.md), [SWARM_MODE.md](./SWARM_MODE.md), root [README.md](../README.md).
+**Related docs:** [ATTESTATION.md](./ATTESTATION.md) (build / icell / TEE flux), [CONFIDENTIAL_INFERENCE.md](./CONFIDENTIAL_INFERENCE.md), [SWARM_MODE.md](./SWARM_MODE.md), root [README.md](../README.md).
 
 ---
 
@@ -358,7 +358,9 @@ The embedded UI is `client/ui/v2/index.html` served at `GET /`.
 
 ## 7. Deep dive: Binary attestation (`mtrxai-attestation`)
 
-**Purpose:** Prove the running client binary matches an operator-approved build before lobby registration.
+**Canonical write-up (flags, icell, full sequence diagrams):** [ATTESTATION.md](./ATTESTATION.md).
+
+**Purpose:** Prove the running peer binary matches an operator-approved build before lobby registration.
 
 ### 7.1 Flow
 
@@ -406,7 +408,9 @@ Docker Compose, client Dockerfile, and Tauri bootstrap all set **`MTRXAI_ATTESTA
 
 ## 8. Deep dive: GPU TEE attestation (`mtrxai-tee-attestation`)
 
-**Crate path:** `mtrxai-tee-attestation/` (exists on disk; **not currently in workspace** or server deps).
+**Canonical write-up:** [ATTESTATION.md §9](./ATTESTATION.md#9-flux-e--gpu-tee-bit-2--tee_gpu) and [CONFIDENTIAL_INFERENCE.md](./CONFIDENTIAL_INFERENCE.md).
+
+**Crate path:** `mtrxAI-common/mtrxai-tee-attestation/` (policy/ranking helpers; lobby `POST /api/tee/verify` is **501**).
 
 **Purpose:** Elevate trust for confidential inference providers (NVIDIA H100+ CC inside TDX/SEV-SNP VMs).
 

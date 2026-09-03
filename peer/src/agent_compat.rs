@@ -665,18 +665,20 @@ fn extract_balanced_json_object(s: &str) -> Option<String> {
 
 fn value_to_tool_calls(v: &Value) -> Option<Value> {
     match v {
-        Value::Object(map) if map.contains_key("name") => {
+        Value::Object(map) if map.contains_key("name") && map.contains_key("arguments") => {
             let name = map.get("name")?.as_str()?;
-            let args = map.get("arguments").cloned().unwrap_or(json!({}));
-            Some(single_tool_call(name, &args))
+            let args = map.get("arguments")?;
+            Some(single_tool_call(name, args))
         }
         Value::Array(arr) => {
             let mut calls = Vec::new();
             for (i, item) in arr.iter().enumerate() {
                 if let Value::Object(map) = item {
-                    if let Some(name) = map.get("name").and_then(|n| n.as_str()) {
-                        let args = map.get("arguments").cloned().unwrap_or(json!({}));
-                        calls.push(tool_call_entry(i, name, &args));
+                    if let (Some(name), Some(args)) = (
+                        map.get("name").and_then(|n| n.as_str()),
+                        map.get("arguments"),
+                    ) {
+                        calls.push(tool_call_entry(i, name, args));
                     }
                 }
             }
@@ -996,12 +998,19 @@ pub struct SseTransformState {
     last_summary: Option<AgentResponseSummary>,
     response_format: AgentResponseFormat,
     stream_meta: StreamChunkMeta,
+    /// When false, plain chat content (including JSON) is forwarded without suppression.
+    request_has_tools: bool,
 }
 
 impl SseTransformState {
     pub fn with_response_format(response_format: AgentResponseFormat) -> Self {
+        Self::with_options(response_format, false)
+    }
+
+    pub fn with_options(response_format: AgentResponseFormat, request_has_tools: bool) -> Self {
         Self {
             response_format,
+            request_has_tools,
             ..Default::default()
         }
     }
@@ -1081,26 +1090,28 @@ impl SseTransformState {
 
             if let Some(piece) = delta.get("content").and_then(|c| c.as_str()) {
                 if !piece.is_empty() {
-                    if !self.suppress_content {
-                        if piece.trim_start().starts_with('{') {
-                            self.suppress_content = true;
+                    if self.request_has_tools {
+                        if !self.suppress_content {
+                            if piece.trim_start().starts_with('{') {
+                                self.suppress_content = true;
+                                self.accumulated.push_str(piece);
+                                return vec![];
+                            }
+                            if let Some(brace_idx) = piece.find('{') {
+                                let before = &piece[..brace_idx];
+                                let json_part = &piece[brace_idx..];
+                                self.suppress_content = true;
+                                self.accumulated.push_str(json_part);
+                                if before.is_empty() {
+                                    return vec![];
+                                }
+                                choice["delta"] = json!({"content": before});
+                                return vec![format!("data: {}", chunk)];
+                            }
+                        } else {
                             self.accumulated.push_str(piece);
                             return vec![];
                         }
-                        if let Some(brace_idx) = piece.find('{') {
-                            let before = &piece[..brace_idx];
-                            let json_part = &piece[brace_idx..];
-                            self.suppress_content = true;
-                            self.accumulated.push_str(json_part);
-                            if before.is_empty() {
-                                return vec![];
-                            }
-                            choice["delta"] = json!({"content": before});
-                            return vec![format!("data: {}", chunk)];
-                        }
-                    } else {
-                        self.accumulated.push_str(piece);
-                        return vec![];
                     }
                 }
             }
@@ -1154,20 +1165,33 @@ impl SseTransformState {
             return streaming_tool_call_sse_lines(self, &tool_calls);
         }
 
+        let content = std::mem::take(&mut self.accumulated);
         self.last_summary = Some(AgentResponseSummary {
             had_structured_tool_calls: false,
             rewrote_text_tool_call: false,
             finish_reason: Some("stop".into()),
-            content_preview: Some(truncate_preview(&self.accumulated, 200)),
+            content_preview: Some(truncate_preview(&content, 200)),
         });
-        let chunk = self.chat_stream_chunk(json!([{
+        let content_chunk = self.chat_stream_chunk(json!([{
             "index": 0,
-            "delta": {"content": null},
+            "delta": {"content": content},
+            "finish_reason": null
+        }]));
+        let finish_chunk = self.chat_stream_chunk(json!([{
+            "index": 0,
+            "delta": {},
             "finish_reason": "stop"
         }]));
-        self.accumulated.clear();
-        vec![format!("data: {}", chunk)]
+        vec![
+            format!("data: {}", content_chunk),
+            format!("data: {}", finish_chunk),
+        ]
     }
+}
+
+/// Format one SSE event for OpenAI-compatible clients (blank line between events).
+pub fn format_sse_event(line: &str) -> String {
+    format!("{line}\n\n")
 }
 
 /// Pick response Content-Type for OpenAI-compatible chat completions.
@@ -1189,6 +1213,55 @@ pub fn chat_response_content_type(stream: bool, upstream: Option<&str>) -> &'sta
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tool_stream_state() -> SseTransformState {
+        SseTransformState::with_options(AgentResponseFormat::ChatCompletions, true)
+    }
+
+    #[test]
+    fn format_sse_event_uses_blank_line_separator() {
+        assert_eq!(format_sse_event("data: hello"), "data: hello\n\n");
+    }
+
+    #[test]
+    fn streaming_forwards_json_without_tools() {
+        let mut state = SseTransformState::default();
+        let chunk = json!({"choices": [{"delta": {"content": "{\"a\": 1}"}, "finish_reason": null}]});
+        let out = state.process_line(&format!("data: {}", chunk));
+        assert_eq!(out.len(), 1);
+        assert!(out[0].contains('a') && out[0].contains('1'));
+    }
+
+    #[test]
+    fn streaming_replays_non_tool_json_when_tools_present() {
+        let mut state = tool_stream_state();
+        let chunk1 = json!({"choices": [{"delta": {"content": "{\"name\": \"Alice\"}"}, "finish_reason": null}]});
+        assert!(state.process_line(&format!("data: {}", chunk1)).is_empty());
+
+        let chunk2 = json!({"choices": [{"delta": {}, "finish_reason": "stop"}]});
+        let out = state.process_line(&format!("data: {}", chunk2));
+        assert!(out.iter().any(|line| line.contains("Alice")));
+        assert!(!state.take_summary().unwrap().rewrote_text_tool_call);
+    }
+
+    #[test]
+    fn name_only_json_is_not_tool_call() {
+        let body = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "{\"name\": \"Alice\", \"city\": \"Rome\"}"
+                },
+                "finish_reason": "stop"
+            }]
+        });
+        let (out, summary) = rewrite_chat_response(body);
+        assert!(!summary.rewrote_text_tool_call);
+        assert_eq!(
+            out["choices"][0]["message"]["content"],
+            "{\"name\": \"Alice\", \"city\": \"Rome\"}"
+        );
+    }
 
     #[test]
     fn ensure_ollama_predict_applies_default() {
@@ -1344,7 +1417,7 @@ mod tests {
 
     #[test]
     fn streaming_chunks_include_openai_metadata() {
-        let mut state = SseTransformState::default();
+        let mut state = tool_stream_state();
         let meta = json!({
             "id": "chatcmpl-test",
             "object": "chat.completion.chunk",
@@ -1392,7 +1465,7 @@ mod tests {
 
     #[test]
     fn streaming_rewrites_bare_json_sse_lines() {
-        let mut state = SseTransformState::default();
+        let mut state = tool_stream_state();
         let chunk1 = r#"{"choices": [{"delta": {"content": "{\"name\": \"run_in_terminal\", \"arguments\": {\"command\": \"ls\"}}"}, "finish_reason": null}]}"#;
         assert!(state.process_line(chunk1).is_empty());
 
@@ -1405,7 +1478,7 @@ mod tests {
 
     #[test]
     fn streaming_prose_prefix_flushes_on_done_without_stop() {
-        let mut state = SseTransformState::default();
+        let mut state = tool_stream_state();
         let chunk1 = json!({"choices": [{"delta": {"content": "run cargo build | {\"name\": \"run_in_terminal\", \"arguments\": {\"command\": \"ls\"}}"}, "finish_reason": null}]});
         let _ = state.process_line(&format!("data: {}", chunk1));
 
@@ -1437,7 +1510,7 @@ mod tests {
     fn finalize_stream_after_suppressed_tool_call_without_upstream_done() {
         // Simulates remote WebRTC channel closing after content without [DONE]
         // (the OpenCode hang: partial "build" then silence without stream termination).
-        let mut state = SseTransformState::default();
+        let mut state = tool_stream_state();
         let chunk1 = json!({"choices": [{"delta": {"content": "run cargo build | {\"name\": \"run_in_terminal\", \"arguments\": {\"command\": \"ls\"}}"}, "finish_reason": null}]});
         let partial = state.process_line(&format!("data: {}", chunk1));
         assert!(partial.iter().any(|line| line.contains("run cargo build")));
@@ -1450,7 +1523,7 @@ mod tests {
 
     #[test]
     fn streaming_prose_prefix_before_json() {
-        let mut state = SseTransformState::default();
+        let mut state = tool_stream_state();
         let chunk1 = json!({"choices": [{"delta": {"content": "run cargo build | {"}, "finish_reason": null}]});
         let out1 = state.process_line(&format!("data: {}", chunk1));
         assert_eq!(out1.len(), 1);
@@ -1509,7 +1582,7 @@ mod tests {
 
     #[test]
     fn streaming_suppresses_json_content_until_finish() {
-        let mut state = SseTransformState::default();
+        let mut state = tool_stream_state();
         let chunk1 = json!({"choices": [{"delta": {"content": "{\""}, "finish_reason": null}]});
         assert!(state.process_line(&format!("data: {}", chunk1)).is_empty());
 

@@ -30,7 +30,6 @@ use libp2p::{
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, Mutex};
@@ -39,8 +38,6 @@ const MAX_CHUNK_BYTES: usize = 3000;
 const MAX_PROXY_BODY_BYTES: usize = 512 * 1024;
 /// LLM inference can take minutes; libp2p default is 10s.
 const PROXY_REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
-
-static NEXT_REQ_ID: AtomicU64 = AtomicU64::new(1);
 
 struct PendingIncomingProxy {
     path: String,
@@ -2086,7 +2083,7 @@ impl P2pManager {
             return Ok(());
         }
 
-        let req_id = format!("p2p_{}", NEXT_REQ_ID.fetch_add(1, Ordering::SeqCst));
+        let req_id = format!("p2p_{}", uuid::Uuid::new_v4());
         self.proxy_state.stats_request_start(
             &req_id,
             &target_mtrxai_peer,

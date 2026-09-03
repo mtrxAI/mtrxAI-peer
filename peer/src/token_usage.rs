@@ -6,6 +6,7 @@ use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 use crate::tx_db::TxStore;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct TokenUsage {
@@ -99,6 +100,31 @@ pub fn publish_token_usage_report(
     });
 }
 
+/// Record a completed local-only inference in Activity (no lobby report).
+pub fn record_local_inference_activity(
+    tx_store: Arc<TxStore>,
+    peer_id: String,
+    model: String,
+    usage: TokenUsage,
+) {
+    let req_id = format!("local-{}", Uuid::new_v4());
+    tokio::spawn(async move {
+        if let Err(e) = tx_store
+            .record_local_inference(
+                req_id,
+                &peer_id,
+                model,
+                usage.prompt_tokens,
+                usage.completion_tokens,
+                usage.total_tokens,
+            )
+            .await
+        {
+            eprintln!("tx_db local inference record error: {}", e);
+        }
+    });
+}
+
 pub fn accumulate_and_parse_usage(buffer: &mut String, chunk: &str) -> Option<TokenUsage> {
     buffer.push_str(chunk);
 
@@ -125,6 +151,36 @@ pub fn parse_usage_from_buffer(buffer: &str) -> Option<TokenUsage> {
     latest
 }
 
+/// Extract assistant text from an OpenAI-style streaming chunk (llama.cpp / inference-cell variants).
+pub fn extract_openai_stream_text(parsed: &Value) -> Option<String> {
+    let choice = parsed.get("choices")?.as_array()?.first()?;
+    if let Some(delta) = choice.get("delta") {
+        if let Some(text) = delta.get("content").and_then(|v| v.as_str()) {
+            if !text.is_empty() {
+                return Some(text.to_string());
+            }
+        }
+        if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
+            if !text.is_empty() {
+                return Some(text.to_string());
+            }
+        }
+    }
+    if let Some(message) = choice.get("message") {
+        if let Some(text) = message.get("content").and_then(|v| v.as_str()) {
+            if !text.is_empty() {
+                return Some(text.to_string());
+            }
+        }
+    }
+    if let Some(text) = choice.get("text").and_then(|v| v.as_str()) {
+        if !text.is_empty() {
+            return Some(text.to_string());
+        }
+    }
+    None
+}
+
 fn parse_stream_line(line: &str) -> Option<Value> {
     let line = line.trim();
     if line.is_empty() || line == "[DONE]" || line == "data: [DONE]" {
@@ -134,7 +190,7 @@ fn parse_stream_line(line: &str) -> Option<Value> {
     serde_json::from_str(json_str).ok()
 }
 
-fn parse_usage_from_value(value: &Value) -> Option<TokenUsage> {
+pub fn parse_usage_from_value(value: &Value) -> Option<TokenUsage> {
     if let Some(usage) = value.get("usage") {
         let prompt = usage
             .get("prompt_tokens")
@@ -227,6 +283,29 @@ mod tests {
         let line = r#"{"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":15,"total_tokens":20}}"#;
         let usage = parse_usage_from_buffer(line).unwrap();
         assert_eq!(usage.total_tokens, 20);
+    }
+
+    #[test]
+    fn extract_openai_stream_text_reads_message_content() {
+        let chunk = serde_json::json!({
+            "choices": [{
+                "delta": {},
+                "message": {"role": "assistant", "content": "hello"},
+                "finish_reason": "stop"
+            }]
+        });
+        assert_eq!(
+            extract_openai_stream_text(&chunk).as_deref(),
+            Some("hello")
+        );
+    }
+
+    #[test]
+    fn extract_openai_stream_text_reads_delta_content() {
+        let chunk = serde_json::json!({
+            "choices": [{"delta": {"content": "hi"}, "finish_reason": null}]
+        });
+        assert_eq!(extract_openai_stream_text(&chunk).as_deref(), Some("hi"));
     }
 
     #[test]

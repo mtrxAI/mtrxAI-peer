@@ -103,6 +103,10 @@ pub struct PeerCreditStats {
 pub struct TransactionStats {
     pub by_model: Vec<ModelCreditStats>,
     pub by_peer: Vec<PeerCreditStats>,
+    /// Total tokens from local (non-monetized) inference on this peer.
+    pub local_tokens: u64,
+    /// Total tokens from swarm inference involving this peer.
+    pub swarm_tokens: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -172,6 +176,143 @@ impl TxStore {
         Ok(())
     }
 
+    /// Record completed local-only inference (no lobby settlement, zero credits).
+    pub async fn record_local_inference(
+        &self,
+        req_id: String,
+        peer_id: &str,
+        model: String,
+        prompt_tokens: u32,
+        completion_tokens: u32,
+        total_tokens: u32,
+    ) -> anyhow::Result<()> {
+        let store = self.clone();
+        let peer_id = peer_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            store.record_local_inference_sync(
+                req_id,
+                &peer_id,
+                model,
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+            )
+        })
+        .await??;
+        Ok(())
+    }
+
+    /// Record completed swarm inference (local ledger only, no lobby settlement).
+    pub async fn record_swarm_report(
+        &self,
+        req_id: String,
+        role: &str,
+        peer_id: &str,
+        remote_peer_id: String,
+        model: String,
+        prompt_tokens: u32,
+        completion_tokens: u32,
+        total_tokens: u32,
+    ) -> anyhow::Result<()> {
+        let store = self.clone();
+        let role = role.to_string();
+        let peer_id = peer_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            store.record_swarm_report_sync(
+                req_id,
+                &role,
+                &peer_id,
+                remote_peer_id,
+                model,
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+            )
+        })
+        .await??;
+        Ok(())
+    }
+
+    fn record_local_inference_sync(
+        &self,
+        req_id: String,
+        peer_id: &str,
+        model: String,
+        prompt_tokens: u32,
+        completion_tokens: u32,
+        total_tokens: u32,
+    ) -> anyhow::Result<()> {
+        let now = unix_now();
+        let tx = PeerTransaction {
+            req_id,
+            consumer_peer_id: peer_id.to_string(),
+            provider_peer_id: peer_id.to_string(),
+            model,
+            counterparty_peer_id: peer_id.to_string(),
+            status: "local".to_string(),
+            reported_at_unix: now,
+            role: "local".to_string(),
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            consumer_credit_delta: 0,
+            provider_credit_delta: 0,
+            local_credit_delta: 0,
+            same_service: true,
+            settled_at_unix: now,
+        };
+        self.upsert_peer(peer_id, now)?;
+        self.upsert_transaction(tx)?;
+        Ok(())
+    }
+
+    fn record_swarm_report_sync(
+        &self,
+        req_id: String,
+        role: &str,
+        peer_id: &str,
+        remote_peer_id: String,
+        model: String,
+        prompt_tokens: u32,
+        completion_tokens: u32,
+        total_tokens: u32,
+    ) -> anyhow::Result<()> {
+        let now = unix_now();
+        let (consumer_peer_id, provider_peer_id) = if role == "consumer" {
+            (peer_id.to_string(), remote_peer_id.clone())
+        } else {
+            (remote_peer_id.clone(), peer_id.to_string())
+        };
+
+        let tx = PeerTransaction {
+            req_id,
+            consumer_peer_id: consumer_peer_id.clone(),
+            provider_peer_id: provider_peer_id.clone(),
+            model,
+            counterparty_peer_id: remote_peer_id,
+            status: "swarm".to_string(),
+            reported_at_unix: now,
+            role: role.to_string(),
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            consumer_credit_delta: 0,
+            provider_credit_delta: 0,
+            local_credit_delta: 0,
+            same_service: false,
+            settled_at_unix: now,
+        };
+        self.upsert_peer(peer_id, now)?;
+        let other_peer = if role == "consumer" {
+            &provider_peer_id
+        } else {
+            &consumer_peer_id
+        };
+        self.upsert_peer(other_peer, now)?;
+        self.upsert_transaction(tx)?;
+        Ok(())
+    }
+
     fn record_local_report_sync(
         &self,
         req_id: String,
@@ -190,7 +331,8 @@ impl TxStore {
             (remote_peer_id.clone(), peer_id.to_string())
         };
 
-        let mut tx = self.load_transaction(&req_id).unwrap_or(PeerTransaction {
+        let existing = self.load_transaction(&req_id);
+        let mut tx = existing.unwrap_or(PeerTransaction {
             req_id: req_id.clone(),
             consumer_peer_id,
             provider_peer_id,
@@ -209,17 +351,20 @@ impl TxStore {
             settled_at_unix: 0,
         });
 
-        if tx.reported_at_unix == 0 {
-            tx.reported_at_unix = now;
-        }
+        tx.reported_at_unix = now;
         tx.role = role.to_string();
         tx.counterparty_peer_id = remote_peer_id;
         tx.model = model;
         tx.prompt_tokens = prompt_tokens;
         tx.completion_tokens = completion_tokens;
         tx.total_tokens = total_tokens;
-        if tx.status.is_empty() {
+        if tx.status.is_empty()
+            || tx.status == "settled"
+            || tx.status == "mismatched"
+            || tx.status == "rejected"
+        {
             tx.status = "pending".to_string();
+            tx.settled_at_unix = 0;
         }
 
         self.upsert_peer(&tx.consumer_peer_id, now)?;
@@ -562,7 +707,33 @@ impl TxStore {
             .collect();
         by_peer.sort_by(|a, b| (b.consumed + b.earned).cmp(&(a.consumed + a.earned)));
 
-        Ok(TransactionStats { by_model, by_peer })
+        let mut local_tokens = 0u64;
+        let mut swarm_tokens = 0u64;
+        for tx in self.all_transactions()? {
+            if tx.consumer_peer_id != local_peer_id && tx.provider_peer_id != local_peer_id {
+                continue;
+            }
+            let ts = if tx.settled_at_unix > 0 {
+                tx.settled_at_unix
+            } else {
+                tx.reported_at_unix
+            };
+            if since_unix.is_some_and(|since| ts < since) {
+                continue;
+            }
+            match tx.status.as_str() {
+                "local" => local_tokens += tx.total_tokens as u64,
+                "swarm" => swarm_tokens += tx.total_tokens as u64,
+                _ => {}
+            }
+        }
+
+        Ok(TransactionStats {
+            by_model,
+            by_peer,
+            local_tokens,
+            swarm_tokens,
+        })
     }
 
     fn upsert_peer(&self, peer_id: &str, ts: u64) -> anyhow::Result<()> {

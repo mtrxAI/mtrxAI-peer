@@ -59,8 +59,49 @@ struct ProxyExchangeMeta {
     path: String,
     started_at: std::time::Instant,
     response_buffer: String,
+    /// Holds an incomplete NDJSON/SSE line split across WebRTC chunks (MAX_DC_CHUNK_BYTES).
+    line_carry: String,
     bytes_sent: u64,
     bytes_received: u64,
+    latest_usage: Option<crate::token_usage::TokenUsage>,
+}
+
+/// Split `chunk` on newlines; keep a trailing partial line in `carry`.
+fn drain_complete_lines(carry: &mut String, chunk: &str) -> Vec<String> {
+    carry.push_str(chunk);
+    let mut lines = Vec::new();
+    while let Some(pos) = carry.find('\n') {
+        let line = carry.drain(..=pos).collect::<String>();
+        lines.push(line);
+    }
+    lines
+}
+
+fn consumer_process_proxy_chunk(meta: &mut ProxyExchangeMeta, chunk: &str) -> (Vec<String>, u32) {
+    meta.bytes_received += chunk.len() as u64;
+    let complete_lines = drain_complete_lines(&mut meta.line_carry, chunk);
+    for line in &complete_lines {
+        if let Some(usage) = accumulate_and_parse_usage(&mut meta.response_buffer, line) {
+            meta.latest_usage = Some(usage);
+        }
+    }
+    let partial_tokens = meta
+        .latest_usage
+        .as_ref()
+        .map(|u| u.total_tokens)
+        .unwrap_or(0);
+    (complete_lines, partial_tokens)
+}
+
+fn flush_consumer_line_carry(meta: &mut ProxyExchangeMeta) -> Option<String> {
+    if meta.line_carry.is_empty() {
+        return None;
+    }
+    let tail = std::mem::take(&mut meta.line_carry);
+    if let Some(usage) = accumulate_and_parse_usage(&mut meta.response_buffer, &tail) {
+        meta.latest_usage = Some(usage);
+    }
+    Some(tail)
 }
 
 fn chunk_utf8(s: &str, max_bytes: usize) -> Vec<String> {
@@ -737,16 +778,19 @@ impl WebRTCManager {
                 path: path.to_string(),
                 started_at: std::time::Instant::now(),
                 response_buffer: String::new(),
+                line_carry: String::new(),
                 bytes_sent,
                 bytes_received: 0,
+                latest_usage: None,
             },
         );
     }
 
     async fn next_proxy_req_id(&self) -> String {
         let peer_id = self.shared_state.lock().await.peer_id.clone();
-        let seq = NEXT_REQ_ID.fetch_add(1, Ordering::SeqCst);
-        format!("{}:{}", peer_id, seq)
+        // UUID suffix so IDs stay unique across process restarts. A monotonic
+        // counter resets to 1 and collided with historical Activity rows.
+        format!("{}:{}", peer_id, Uuid::new_v4())
     }
 
     async fn send_peer_info(&self, peer_info: &PeerInfo) -> anyhow::Result<()> {
@@ -2412,29 +2456,24 @@ fn setup_data_channel_handlers(
                                 parts,
                             }) => {
                                 for part in parts {
-                                    let chunk_len = part.len() as u64;
-                                    let partial_tokens = {
+                                    let (complete_lines, partial_tokens) = {
                                         let mut exchanges = active_exchanges_msg.lock().await;
                                         if let Some(meta) = exchanges.get_mut(req_id) {
-                                            meta.bytes_received += chunk_len;
-                                            accumulate_and_parse_usage(
-                                                &mut meta.response_buffer,
-                                                &part,
-                                            )
-                                            .map(|u| u.total_tokens)
-                                            .unwrap_or(0)
+                                            consumer_process_proxy_chunk(meta, &part)
                                         } else {
-                                            0
+                                            (vec![part], 0)
                                         }
                                     };
                                     proxy_state_msg_clone.stats_stream_progress(
                                         req_id,
-                                        chunk_len,
+                                        complete_lines.iter().map(|l| l.len() as u64).sum(),
                                         partial_tokens,
                                     );
                                     let reqs = pending_reqs.lock().await;
                                     if let Some(tx) = reqs.get(req_id) {
-                                        let _ = tx.send(Ok(part)).await;
+                                        for line in complete_lines {
+                                            let _ = tx.send(Ok(line)).await;
+                                        }
                                     }
                                 }
                             }
@@ -2442,29 +2481,24 @@ fn setup_data_channel_handlers(
                                 parts,
                             }) => {
                                 for part in parts {
-                                    let chunk_len = part.len() as u64;
-                                    let partial_tokens = {
+                                    let (complete_lines, partial_tokens) = {
                                         let mut exchanges = active_exchanges_msg.lock().await;
                                         if let Some(meta) = exchanges.get_mut(req_id) {
-                                            meta.bytes_received += chunk_len;
-                                            accumulate_and_parse_usage(
-                                                &mut meta.response_buffer,
-                                                &part,
-                                            )
-                                            .map(|u| u.total_tokens)
-                                            .unwrap_or(0)
+                                            consumer_process_proxy_chunk(meta, &part)
                                         } else {
-                                            0
+                                            (vec![part], 0)
                                         }
                                     };
                                     proxy_state_msg_clone.stats_stream_progress(
                                         req_id,
-                                        chunk_len,
+                                        complete_lines.iter().map(|l| l.len() as u64).sum(),
                                         partial_tokens,
                                     );
                                     let reqs = pending_reqs.lock().await;
                                     if let Some(tx) = reqs.get(req_id) {
-                                        let _ = tx.send(Ok(part)).await;
+                                        for line in complete_lines {
+                                            let _ = tx.send(Ok(line)).await;
+                                        }
                                     }
                                 }
                                 pending_encrypted.lock().await.remove(req_id);
@@ -2472,8 +2506,15 @@ fn setup_data_channel_handlers(
                                     let mut exchanges = active_exchanges_msg.lock().await;
                                     exchanges.remove(req_id)
                                 };
-                                if let Some(meta) = meta {
+                                if let Some(mut meta) = meta {
+                                    if let Some(tail) = flush_consumer_line_carry(&mut meta) {
+                                        let reqs = pending_reqs.lock().await;
+                                        if let Some(tx) = reqs.get(req_id) {
+                                            let _ = tx.send(Ok(tail)).await;
+                                        }
+                                    }
                                     let usage = parse_usage_from_buffer(&meta.response_buffer)
+                                        .or(meta.latest_usage)
                                         .unwrap_or(TokenUsage {
                                             prompt_tokens: 0,
                                             completion_tokens: 0,
@@ -2622,27 +2663,38 @@ fn setup_data_channel_handlers(
                     DataChannelMessage::ProxyResponseChunk { req_id, chunk } => {
                         if !is_provider_msg {
                             let chunk_len = chunk.len() as u64;
-                            let partial_tokens = {
+                            let complete_lines = {
                                 let mut exchanges = active_exchanges_msg.lock().await;
                                 if let Some(meta) = exchanges.get_mut(&req_id) {
-                                    meta.bytes_received += chunk_len;
-                                    accumulate_and_parse_usage(&mut meta.response_buffer, &chunk)
-                                        .map(|u| u.total_tokens)
-                                        .unwrap_or(0)
+                                    let (lines, partial_tokens) =
+                                        consumer_process_proxy_chunk(meta, &chunk);
+                                    proxy_state_msg_clone.stats_stream_progress(
+                                        &req_id,
+                                        chunk_len,
+                                        partial_tokens,
+                                    );
+                                    lines
                                 } else {
-                                    0
+                                    proxy_state_msg_clone.stats_stream_progress(
+                                        &req_id,
+                                        chunk_len,
+                                        0,
+                                    );
+                                    vec![chunk]
                                 }
                             };
-                            proxy_state_msg_clone.stats_stream_progress(
-                                &req_id,
-                                chunk_len,
-                                partial_tokens,
-                            );
-                        }
 
-                        let reqs = pending_reqs.lock().await;
-                        if let Some(tx) = reqs.get(&req_id) {
-                            let _ = tx.send(Ok(chunk)).await;
+                            let reqs = pending_reqs.lock().await;
+                            if let Some(tx) = reqs.get(&req_id) {
+                                for line in complete_lines {
+                                    let _ = tx.send(Ok(line)).await;
+                                }
+                            }
+                        } else {
+                            let reqs = pending_reqs.lock().await;
+                            if let Some(tx) = reqs.get(&req_id) {
+                                let _ = tx.send(Ok(chunk)).await;
+                            }
                         }
                     }
                     DataChannelMessage::ProxyResponseDone { req_id } => {
@@ -2652,8 +2704,16 @@ fn setup_data_channel_handlers(
                                 exchanges.remove(&req_id)
                             };
 
-                            if let Some(meta) = meta {
+                            if let Some(mut meta) = meta {
+                                if let Some(tail) = flush_consumer_line_carry(&mut meta) {
+                                    let reqs = pending_reqs.lock().await;
+                                    if let Some(tx) = reqs.get(&req_id) {
+                                        let _ = tx.send(Ok(tail)).await;
+                                    }
+                                }
+
                                 let usage = parse_usage_from_buffer(&meta.response_buffer)
+                                    .or(meta.latest_usage)
                                     .unwrap_or(TokenUsage {
                                         prompt_tokens: 0,
                                         completion_tokens: 0,
@@ -2842,14 +2902,20 @@ fn dispatch_proxy_request(
 
                 let mut response_buffer = String::new();
                 let mut bytes_received = 0u64;
+                let mut latest_usage: Option<TokenUsage> = None;
 
                 while let Some(Ok(chunk_bytes)) = stream.next().await {
                     if let Ok(chunk_str) = String::from_utf8(chunk_bytes.to_vec()) {
                         bytes_received += chunk_str.len() as u64;
-                        let partial_tokens =
+                        if let Some(usage) =
                             accumulate_and_parse_usage(&mut response_buffer, &chunk_str)
-                                .map(|u| u.total_tokens)
-                                .unwrap_or(0);
+                        {
+                            latest_usage = Some(usage.clone());
+                        }
+                        let partial_tokens = latest_usage
+                            .as_ref()
+                            .map(|u| u.total_tokens)
+                            .unwrap_or(0);
                         proxy_state.stats_stream_progress(
                             &req_id,
                             chunk_str.len() as u64,
@@ -2865,11 +2931,13 @@ fn dispatch_proxy_request(
                 let _ = send_dc_message(&dc, &done_msg).await;
                 println!("✅ Successfully streamed response for [{}]", req_id);
 
-                let usage = parse_usage_from_buffer(&response_buffer).unwrap_or(TokenUsage {
-                    prompt_tokens: 0,
-                    completion_tokens: 0,
-                    total_tokens: 0,
-                });
+                let usage = parse_usage_from_buffer(&response_buffer)
+                    .or(latest_usage)
+                    .unwrap_or(TokenUsage {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                    });
 
                 proxy_state.stats_request_complete(&req_id, usage.total_tokens, bytes_received);
 

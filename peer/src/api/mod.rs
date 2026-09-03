@@ -111,6 +111,8 @@ pub fn router(state: ProxyState) -> Router {
             "/api/client/swarms/:swarm_id/schedule",
             put(put_swarm_schedule),
         )
+        .route("/api/client/chat/models", get(get_chat_models))
+        .route("/api/client/chat", post(crate::llm_proxy::chat_completion))
         .route("/api/client/llm/scan", get(get_llm_scan))
         .route("/api/client/llm/select", post(post_llm_select))
         .route(
@@ -1636,6 +1638,50 @@ async fn get_status(State(state): State<ProxyState>) -> Json<StatusResponse> {
         gpu_thermal_cooldown_c: cfg.gpu_thermal_cooldown_c,
         gpu_thermal_auto_resume: cfg.gpu_thermal_auto_resume,
     })
+}
+
+#[derive(Serialize)]
+struct ChatModelsResponse {
+    models: Vec<crate::chat_models::ChatModelEntry>,
+}
+
+async fn get_chat_models(State(state): State<ProxyState>) -> Json<ChatModelsResponse> {
+    let cfg = state.client_config.read().await.clone();
+    let (local_models, network_models, clusters, swarms) = {
+        let app = state.shared_state.lock().await;
+        (
+            app.local_models_full.clone(),
+            app.network_models.clone(),
+            app.clusters.clone(),
+            app.swarms.clone(),
+        )
+    };
+    let llm_servers = state.llm_registry.inner.server_views(&cfg).await;
+    let servers: Vec<(String, String, Option<String>)> = llm_servers
+        .iter()
+        .map(|s| (s.id.clone(), s.kind.clone(), s.label.clone()))
+        .collect();
+
+    let mut models =
+        crate::chat_models::build_chat_models(&local_models, &network_models, &servers);
+
+    for entry in &mut models {
+        if entry.source_kind == "cluster" {
+            if let Some(c) = clusters.iter().find(|c| c.cluster_id == entry.source_label) {
+                if let Some(name) = c.name.as_deref().filter(|n| !n.is_empty()) {
+                    entry.source_label = name.to_string();
+                }
+            }
+        } else if entry.source_kind == "swarm" {
+            if let Some(s) = swarms.iter().find(|s| s.swarm_id == entry.source_label) {
+                if let Some(name) = s.name.as_deref().filter(|n| !n.is_empty()) {
+                    entry.source_label = name.to_string();
+                }
+            }
+        }
+    }
+
+    Json(ChatModelsResponse { models })
 }
 
 #[derive(Serialize)]

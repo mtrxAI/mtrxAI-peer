@@ -104,6 +104,67 @@ async fn upsert_from_lobby_updates_credit_deltas_and_stats() {
 }
 
 #[tokio::test]
+async fn record_local_report_reuse_resets_terminal_row() {
+    let store = Arc::new(TxStore::open_in_memory().unwrap());
+    let local = local_peer();
+    let remote = other_peer();
+
+    store
+        .record_local_report(
+            "req-reuse".to_string(),
+            "consumer",
+            &local,
+            remote.clone(),
+            "llama3".to_string(),
+            1,
+            1,
+            2,
+        )
+        .await
+        .unwrap();
+
+    store
+        .upsert_from_lobby(
+            TransactionView {
+                req_id: "req-reuse".to_string(),
+                consumer_peer_id: Some(Uuid::parse_str(&local).unwrap()),
+                provider_peer_id: Some(Uuid::parse_str(&remote).unwrap()),
+                model: Some("llama3".to_string()),
+                total_tokens: Some(2),
+                same_service: Some(false),
+                consumer_credit_delta: Some(0),
+                provider_credit_delta: Some(0),
+                status: "mismatched".to_string(),
+                settled_at: Some(chrono::Utc::now()),
+            },
+            &local,
+            None,
+        )
+        .await
+        .unwrap();
+
+    store
+        .record_local_report(
+            "req-reuse".to_string(),
+            "consumer",
+            &local,
+            remote,
+            "llama3".to_string(),
+            10,
+            20,
+            30,
+        )
+        .await
+        .unwrap();
+
+    let rows = store.list_transactions(10, 0).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].status, "pending");
+    assert_eq!(rows[0].total_tokens, 30);
+    assert_eq!(rows[0].settled_at_unix, 0);
+}
+
+#[tokio::test]
 async fn upsert_from_lobby_ignores_unrelated_transactions() {
     let store = Arc::new(TxStore::open_in_memory().unwrap());
     let local = local_peer();
@@ -170,4 +231,64 @@ async fn provider_role_earns_credits_in_stats() {
     assert_eq!(stats.by_model[0].earned, 40);
     assert_eq!(stats.by_model[0].consumed, 0);
     assert_eq!(stats.by_peer[0].earned, 40);
+}
+
+#[tokio::test]
+async fn record_local_inference_creates_local_status_row() {
+    let store = Arc::new(TxStore::open_in_memory().unwrap());
+    let local = local_peer();
+
+    store
+        .record_local_inference(
+            "local-req-1".to_string(),
+            &local,
+            "llama3".to_string(),
+            10,
+            20,
+            30,
+        )
+        .await
+        .unwrap();
+
+    let rows = store.list_transactions(10, 0).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].status, "local");
+    assert_eq!(rows[0].role, "local");
+    assert_eq!(rows[0].counterparty_peer_id, local);
+    assert_eq!(rows[0].total_tokens, 30);
+
+    let stats = store.stats(&local, None).await.unwrap();
+    assert_eq!(stats.local_tokens, 30);
+    assert_eq!(stats.swarm_tokens, 0);
+}
+
+#[tokio::test]
+async fn record_swarm_report_creates_swarm_status_row() {
+    let store = Arc::new(TxStore::open_in_memory().unwrap());
+    let local = local_peer();
+    let remote = other_peer();
+
+    store
+        .record_swarm_report(
+            "swarm-req-1".to_string(),
+            "provider",
+            &local,
+            remote.clone(),
+            "mistral".to_string(),
+            5,
+            15,
+            20,
+        )
+        .await
+        .unwrap();
+
+    let rows = store.list_transactions(10, 0).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].status, "swarm");
+    assert_eq!(rows[0].role, "provider");
+    assert_eq!(rows[0].counterparty_peer_id, remote);
+
+    let stats = store.stats(&local, None).await.unwrap();
+    assert_eq!(stats.swarm_tokens, 20);
+    assert_eq!(stats.local_tokens, 0);
 }
