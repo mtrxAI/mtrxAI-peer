@@ -112,6 +112,13 @@ pub fn router(state: ProxyState) -> Router {
             put(put_swarm_schedule),
         )
         .route("/api/client/chat/models", get(get_chat_models))
+        .route("/api/client/chat/sessions", get(get_chat_sessions).post(post_chat_session))
+        .route(
+            "/api/client/chat/sessions/:id",
+            get(get_chat_session)
+                .put(put_chat_session)
+                .delete(delete_chat_session),
+        )
         .route("/api/client/chat", post(crate::llm_proxy::chat_completion))
         .route("/api/client/llm/scan", get(get_llm_scan))
         .route("/api/client/llm/select", post(post_llm_select))
@@ -1682,6 +1689,143 @@ async fn get_chat_models(State(state): State<ProxyState>) -> Json<ChatModelsResp
     }
 
     Json(ChatModelsResponse { models })
+}
+
+#[derive(Serialize)]
+struct ChatSessionsResponse {
+    sessions: Vec<crate::tx_db::ChatSessionSummary>,
+}
+
+async fn get_chat_sessions(
+    State(state): State<ProxyState>,
+) -> Result<Json<ChatSessionsResponse>, (StatusCode, String)> {
+    let sessions = state
+        .tx_store
+        .list_chat_sessions()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(ChatSessionsResponse { sessions }))
+}
+
+#[derive(Deserialize)]
+struct CreateChatSessionBody {
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+}
+
+async fn post_chat_session(
+    State(state): State<ProxyState>,
+    Json(body): Json<CreateChatSessionBody>,
+) -> Result<Json<crate::tx_db::ChatSessionView>, (StatusCode, String)> {
+    let id = Uuid::new_v4().to_string();
+    let title = body
+        .title
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| "New chat".to_string());
+    let model = body.model.unwrap_or_default();
+    let session = state
+        .tx_store
+        .upsert_chat_session(id, title, model, Vec::new(), None)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(session))
+}
+
+async fn get_chat_session(
+    State(state): State<ProxyState>,
+    Path(id): Path<String>,
+) -> Result<Json<crate::tx_db::ChatSessionView>, (StatusCode, String)> {
+    match state
+        .tx_store
+        .get_chat_session(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    {
+        Some(session) => Ok(Json(session)),
+        None => Err((StatusCode::NOT_FOUND, "chat session not found".to_string())),
+    }
+}
+
+#[derive(Deserialize)]
+struct PutChatSessionBody {
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    messages: Vec<crate::tx_db::ChatMessage>,
+}
+
+fn auto_chat_title(messages: &[crate::tx_db::ChatMessage], current: &str) -> String {
+    let blank = current.trim().is_empty() || current == "New chat";
+    if !blank {
+        return current.to_string();
+    }
+    let Some(first_user) = messages.iter().find(|m| m.role == "user") else {
+        return if current.trim().is_empty() {
+            "New chat".to_string()
+        } else {
+            current.to_string()
+        };
+    };
+    let trimmed = first_user.content.trim();
+    if trimmed.is_empty() {
+        return "New chat".to_string();
+    }
+    let mut title: String = trimmed.chars().take(48).collect();
+    if trimmed.chars().count() > 48 {
+        title.push('…');
+    }
+    title
+}
+
+async fn put_chat_session(
+    State(state): State<ProxyState>,
+    Path(id): Path<String>,
+    Json(body): Json<PutChatSessionBody>,
+) -> Result<Json<crate::tx_db::ChatSessionView>, (StatusCode, String)> {
+    let existing = state
+        .tx_store
+        .get_chat_session(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let (created_at, prev_title, prev_model) = match &existing {
+        Some(s) => (Some(s.created_at_unix), s.title.clone(), s.model.clone()),
+        None => (None, "New chat".to_string(), String::new()),
+    };
+
+    let title_input = body.title.unwrap_or(prev_title);
+    let title = auto_chat_title(&body.messages, &title_input);
+    let model = body
+        .model
+        .filter(|m| !m.is_empty())
+        .unwrap_or(prev_model);
+
+    let session = state
+        .tx_store
+        .upsert_chat_session(id, title, model, body.messages, created_at)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(session))
+}
+
+async fn delete_chat_session(
+    State(state): State<ProxyState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let deleted = state
+        .tx_store
+        .delete_chat_session(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err((StatusCode::NOT_FOUND, "chat session not found".to_string()))
+    }
 }
 
 #[derive(Serialize)]

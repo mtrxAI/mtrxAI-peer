@@ -292,3 +292,65 @@ async fn record_swarm_report_creates_swarm_status_row() {
     assert_eq!(stats.swarm_tokens, 20);
     assert_eq!(stats.local_tokens, 0);
 }
+
+#[tokio::test]
+async fn chat_session_create_list_get_delete() {
+    use peer::tx_db::ChatMessage;
+
+    let store = Arc::new(TxStore::open_in_memory().unwrap());
+
+    let created = store
+        .upsert_chat_session(
+            "chat-1".to_string(),
+            "Hello world".to_string(),
+            "llama3".to_string(),
+            vec![ChatMessage {
+                role: "user".to_string(),
+                content: "Hello world".to_string(),
+            }],
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.id, "chat-1");
+    assert_eq!(created.model, "llama3");
+    assert_eq!(created.messages.len(), 1);
+
+    let listed = store.list_chat_sessions().await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, "chat-1");
+    assert_eq!(listed[0].message_count, 1);
+    assert_eq!(listed[0].title, "Hello world");
+
+    let loaded = store.get_chat_session("chat-1").await.unwrap().unwrap();
+    assert_eq!(loaded.messages[0].content, "Hello world");
+
+    store
+        .upsert_chat_session(
+            "chat-1".to_string(),
+            "Hello world".to_string(),
+            "llama3".to_string(),
+            vec![
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: "Hello world".to_string(),
+                },
+                ChatMessage {
+                    role: "assistant".to_string(),
+                    content: "Hi!".to_string(),
+                },
+            ],
+            Some(created.created_at_unix),
+        )
+        .await
+        .unwrap();
+
+    let updated = store.get_chat_session("chat-1").await.unwrap().unwrap();
+    assert_eq!(updated.messages.len(), 2);
+    assert_eq!(updated.created_at_unix, created.created_at_unix);
+
+    assert!(store.delete_chat_session("chat-1").await.unwrap());
+    assert!(store.get_chat_session("chat-1").await.unwrap().is_none());
+    assert!(store.list_chat_sessions().await.unwrap().is_empty());
+    assert!(!store.delete_chat_session("chat-1").await.unwrap());
+}

@@ -33,6 +33,8 @@
     };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
   <style>
     :root {
       --color-bg: #0f1117;
@@ -64,6 +66,114 @@
     .btn-icon-warn:hover:not(:disabled) { background: rgba(251,191,36,0.12); }
     .btn-icon-danger { color: #f87171; }
     .btn-icon-danger:hover:not(:disabled) { background: rgba(248,113,113,0.12); }
+    .chat-shell {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+      height: 100%;
+      border: 1px solid var(--color-border);
+      border-radius: 0.75rem;
+      background: rgba(26, 29, 39, 0.85);
+      overflow: hidden;
+    }
+    @media (min-width: 768px) {
+      .chat-shell { flex-direction: row; }
+    }
+    .chat-rail {
+      display: flex;
+      flex-direction: column;
+      border-bottom: 1px solid var(--color-border);
+      background: #141722;
+      max-height: 11rem;
+    }
+    @media (min-width: 768px) {
+      .chat-rail {
+        width: 14rem;
+        max-height: none;
+        border-bottom: none;
+        border-right: 1px solid var(--color-border);
+      }
+    }
+    .chat-md {
+      font-size: 0.875rem;
+      line-height: 1.55;
+      color: #e8eaef;
+      word-break: break-word;
+    }
+    .chat-md > :first-child { margin-top: 0; }
+    .chat-md > :last-child { margin-bottom: 0; }
+    .chat-md p { margin: 0.5rem 0; }
+    .chat-md h1, .chat-md h2, .chat-md h3, .chat-md h4 {
+      margin: 0.85rem 0 0.4rem;
+      font-weight: 600;
+      color: #f8f9fb;
+      line-height: 1.3;
+    }
+    .chat-md h1 { font-size: 1.15rem; }
+    .chat-md h2 { font-size: 1.05rem; }
+    .chat-md h3 { font-size: 0.95rem; }
+    .chat-md ul, .chat-md ol { margin: 0.5rem 0; padding-left: 1.25rem; }
+    .chat-md li { margin: 0.2rem 0; }
+    .chat-md a { color: #60a5fa; text-decoration: underline; text-underline-offset: 2px; }
+    .chat-md a:hover { color: #93c5fd; }
+    .chat-md blockquote {
+      margin: 0.6rem 0;
+      padding: 0.35rem 0.75rem;
+      border-left: 3px solid #3b82f6;
+      color: #c5cad3;
+      background: rgba(15, 17, 23, 0.45);
+    }
+    .chat-md code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.8em;
+      background: #0f1117;
+      border: 1px solid #2a3142;
+      border-radius: 0.25rem;
+      padding: 0.1rem 0.35rem;
+    }
+    .chat-md pre {
+      margin: 0.65rem 0;
+      padding: 0.85rem 1rem;
+      overflow-x: auto;
+      background: #0f1117;
+      border: 1px solid #2a3142;
+      border-radius: 0.5rem;
+    }
+    .chat-md pre code {
+      background: transparent;
+      border: none;
+      padding: 0;
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
+    .chat-md table { width: 100%; border-collapse: collapse; margin: 0.65rem 0; font-size: 0.8rem; }
+    .chat-md th, .chat-md td { border: 1px solid #2a3142; padding: 0.35rem 0.5rem; text-align: left; }
+    .chat-md th { background: #222633; }
+    .chat-md hr { border: none; border-top: 1px solid #2a3142; margin: 0.85rem 0; }
+    .chat-user-bubble .chat-md code,
+    .chat-user-bubble .chat-md pre {
+      background: rgba(15, 17, 23, 0.35);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+    .chat-loader {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: #9aa3b2;
+      font-size: 0.8125rem;
+    }
+    .chat-loader-spin {
+      width: 1rem;
+      height: 1rem;
+      border: 2px solid #2a3142;
+      border-top-color: #60a5fa;
+      border-radius: 9999px;
+      animation: chat-spin 0.7s linear infinite;
+    }
+    @keyframes chat-spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body class="h-full overflow-hidden text-slate-100 antialiased" x-data="mtrxaiApp()" x-init="init()" x-cloak>
@@ -943,7 +1053,7 @@
       </aside>
 
       <!-- Main area -->
-      <div class="flex flex-1 flex-col transition-all duration-200" :class="sidebarCollapsed ? 'ml-14' : 'ml-56'">
+      <div class="flex min-h-0 flex-1 flex-col transition-all duration-200" :class="sidebarCollapsed ? 'ml-14' : 'ml-56'">
 
         <!-- Topbar -->
         <header class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-4 border-b border-slate-800 bg-slate-900 px-6">
@@ -1073,10 +1183,13 @@
           </div>
         </header>
 
-        <main class="flex-1 overflow-y-auto overflow-x-hidden min-w-0 p-6 space-y-6">
+        <main class="flex-1 min-h-0 min-w-0 overflow-x-hidden"
+          :class="dashboardTab === 'chat'
+            ? 'flex flex-col overflow-hidden p-2'
+            : 'overflow-y-auto p-6 space-y-6'">
 
       <!-- Dashboard -->
-      <section class="space-y-6">
+      <section :class="dashboardTab === 'chat' ? 'flex min-h-0 flex-1 flex-col gap-2' : 'space-y-6'">
 
         <!-- Incoming model start offers (local tab alert) -->
         <div x-show="!status.auto_approve_run_model_request && (status.incoming_model_offers?.length > 0)"
@@ -1441,7 +1554,16 @@
                     </button>
                     <div class="flex items-center gap-1 shrink-0">
                       <template x-for="chip in entry.originChips" :key="entry.name + '-' + chip.kind + '-' + chip.id">
-                        <span class="rounded bg-slate-900/80 px-1.5 py-0.5 text-[10px] text-slate-300 max-w-[9rem] truncate" :title="chip.label" x-text="chip.short"></span>
+                        <span class="inline-flex items-center gap-1 rounded bg-slate-900/80 px-1.5 py-0.5 text-[10px] text-slate-300 max-w-[10rem]"
+                          :title="chip.label">
+                          <svg x-show="chip.location === 'local'" class="h-3 w-3 shrink-0 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
+                          </svg>
+                          <svg x-show="chip.location === 'remote'" class="h-3 w-3 shrink-0 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z" />
+                          </svg>
+                          <span class="truncate" x-text="chip.short"></span>
+                        </span>
                       </template>
                       <button type="button" @click="setModelVisibility(entry.name, !entry.visible)"
                         :title="entry.visible ? 'Hide from proxy & advertise' : 'Show in proxy & advertise'"
@@ -1497,106 +1619,160 @@
           </div>
         </div>
 
-        <!-- Chat tab (in-memory debug chat) -->
-        <div x-show="dashboardTab === 'chat'" class="space-y-4 flex flex-col min-h-[calc(100vh-8rem)]">
-          <div class="rounded-lg border border-slate-800 bg-slate-900/80 p-4 space-y-3">
-            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 class="font-medium">Chat</h3>
-                <p class="text-xs text-slate-500 mt-0.5">In-memory debug chat — not persisted. Pick any local or remote model.</p>
-              </div>
-              <div class="flex items-center gap-1.5 shrink-0">
-                <button type="button" @click="clearChat()" :disabled="!chat.messages.length && !chat.error"
-                  class="rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-slate-100 transition disabled:opacity-40">Clear</button>
-                <button type="button" @click="loadChatModels()" :disabled="chat.loadingModels"
-                  class="rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-slate-100 transition disabled:opacity-40"
-                  x-text="chat.loadingModels ? 'Refreshing…' : 'Refresh models'"></button>
-              </div>
-            </div>
-
-            <!-- Custom model picker with local/remote icons -->
-            <div class="relative" @click.outside="chat.pickerOpen = false">
-              <button type="button" @click="chat.pickerOpen = !chat.pickerOpen"
-                class="flex w-full items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-left text-sm text-slate-100 hover:border-slate-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/40">
-                <template x-if="selectedChatModel()?.location === 'local'">
-                  <svg class="h-4 w-4 shrink-0 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" title="Local">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
-                  </svg>
-                </template>
-                <template x-if="selectedChatModel()?.location === 'remote'">
-                  <svg class="h-4 w-4 shrink-0 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" title="Remote">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z" />
-                  </svg>
-                </template>
-                <template x-if="!selectedChatModel()">
-                  <svg class="h-4 w-4 shrink-0 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                  </svg>
-                </template>
-                <span class="min-w-0 flex-1 truncate" x-text="selectedChatModel()?.name || 'Select a model…'"></span>
-                <span x-show="selectedChatModel()" class="shrink-0 text-[10px] text-slate-500 truncate max-w-[8rem]"
-                  x-text="selectedChatModel()?.source_label || selectedChatModel()?.source_kind"></span>
-                <svg class="h-4 w-4 shrink-0 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        <!-- Chat tab -->
+        <div x-show="dashboardTab === 'chat'" class="chat-shell" x-cloak>
+          <!-- Thread rail -->
+          <aside class="chat-rail">
+            <div class="flex items-center justify-between gap-2 px-2 py-2 border-b border-slate-800">
+              <h3 class="text-sm font-medium text-slate-100">Chats</h3>
+              <button type="button" class="btn-icon btn-icon-primary" title="New chat" @click="createChatSession()"
+                :disabled="chat.saving || chat.streaming">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
               </button>
-              <div x-show="chat.pickerOpen" x-transition
-                class="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 overflow-y-auto rounded-md border border-slate-700 bg-slate-900 py-1 shadow-xl">
-                <input type="search" x-model="chat.modelFilter" placeholder="Filter models…"
-                  class="mx-2 mb-1 mt-1 w-[calc(100%-1rem)] rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
-                <template x-for="m in filteredChatModels()" :key="'chat-m-' + m.name">
-                  <button type="button" @click="selectChatModel(m.name)"
-                    class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-800"
-                    :class="chat.model === m.name ? 'bg-slate-800/80 text-slate-100' : 'text-slate-300'">
-                    <template x-if="m.location === 'local'">
-                      <svg class="h-4 w-4 shrink-0 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
-                      </svg>
-                    </template>
-                    <template x-if="m.location === 'remote'">
-                      <svg class="h-4 w-4 shrink-0 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z" />
-                      </svg>
-                    </template>
-                    <span class="min-w-0 flex-1 break-all" x-text="m.name"></span>
-                    <span class="shrink-0 text-[10px] text-slate-500" x-text="m.source_label || m.source_kind"></span>
+            </div>
+            <div class="flex-1 overflow-y-auto p-2 space-y-1">
+              <template x-for="s in chat.sessions" :key="'sess-' + s.id">
+                <div class="group flex items-start gap-1 rounded-md px-2 py-2 cursor-pointer transition"
+                  :class="chat.sessionId === s.id ? 'bg-slate-800 text-slate-100' : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'"
+                  @click="selectChatSession(s.id)">
+                  <div class="min-w-0 flex-1">
+                    <div class="truncate text-xs font-medium" x-text="s.title || 'New chat'"></div>
+                    <div class="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-500">
+                      <span class="truncate max-w-[7rem]" x-text="s.model || 'No model'"></span>
+                      <span>·</span>
+                      <span class="shrink-0" x-text="formatChatTime(s.updated_at_unix)"></span>
+                    </div>
+                  </div>
+                  <button type="button" class="btn-icon btn-icon-danger opacity-70 hover:opacity-100 shrink-0"
+                    title="Delete chat" @click.stop="deleteChatSession(s.id)"
+                    :disabled="chat.saving || chat.streaming">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                    </svg>
                   </button>
-                </template>
-                <p x-show="!filteredChatModels().length" class="px-3 py-2 text-xs text-slate-500">No models available</p>
+                </div>
+              </template>
+              <p x-show="!chat.sessions.length" class="px-2 py-4 text-xs text-slate-500 text-center">No chats yet</p>
+            </div>
+          </aside>
+
+          <!-- Main conversation -->
+          <div class="flex min-w-0 flex-1 flex-col">
+            <div class="flex flex-wrap items-center gap-2 border-b border-slate-800 px-2 py-2">
+              <div class="relative min-w-0 flex-1" @click.outside="chat.pickerOpen = false">
+                <button type="button" @click="chat.pickerOpen = !chat.pickerOpen"
+                  class="flex w-full max-w-xl items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-left text-sm text-slate-100 hover:border-slate-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/40">
+                  <template x-if="selectedChatModel()?.location === 'local'">
+                    <svg class="h-4 w-4 shrink-0 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
+                    </svg>
+                  </template>
+                  <template x-if="selectedChatModel()?.location === 'remote'">
+                    <svg class="h-4 w-4 shrink-0 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z" />
+                    </svg>
+                  </template>
+                  <template x-if="!selectedChatModel()">
+                    <svg class="h-4 w-4 shrink-0 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                    </svg>
+                  </template>
+                  <span class="min-w-0 flex-1 truncate" x-text="selectedChatModel()?.name || 'Select a model…'"></span>
+                  <span x-show="selectedChatModel()" class="hidden sm:inline shrink-0 text-[10px] text-slate-500 truncate max-w-[8rem]"
+                    x-text="selectedChatModel()?.source_label || selectedChatModel()?.source_kind"></span>
+                  <svg class="h-4 w-4 shrink-0 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </button>
+                <div x-show="chat.pickerOpen" x-transition
+                  class="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 overflow-y-auto rounded-md border border-slate-700 bg-slate-900 py-1 shadow-xl max-w-xl">
+                  <input type="search" x-model="chat.modelFilter" placeholder="Filter models…"
+                    class="mx-2 mb-1 mt-1 w-[calc(100%-1rem)] rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:border-blue-500 focus:outline-none" />
+                  <template x-for="m in filteredChatModels()" :key="'chat-m-' + m.name">
+                    <button type="button" @click="selectChatModel(m.name)"
+                      class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-800"
+                      :class="chat.model === m.name ? 'bg-slate-800/80 text-slate-100' : 'text-slate-300'">
+                      <template x-if="m.location === 'local'">
+                        <svg class="h-4 w-4 shrink-0 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
+                        </svg>
+                      </template>
+                      <template x-if="m.location === 'remote'">
+                        <svg class="h-4 w-4 shrink-0 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z" />
+                        </svg>
+                      </template>
+                      <span class="min-w-0 flex-1 break-all" x-text="m.name"></span>
+                      <span class="shrink-0 text-[10px] text-slate-500" x-text="m.source_label || m.source_kind"></span>
+                    </button>
+                  </template>
+                  <p x-show="!filteredChatModels().length" class="px-3 py-2 text-xs text-slate-500">No models available</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-1 shrink-0">
+                <button type="button" class="btn-icon btn-icon-ghost" title="Refresh models"
+                  @click="loadChatModels()" :disabled="chat.loadingModels">
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
+                    :class="chat.loadingModels ? 'animate-spin' : ''">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+                  </svg>
+                </button>
+                <button type="button" class="btn-icon btn-icon-danger" title="Clear messages"
+                  @click="clearChat()" :disabled="(!chat.messages.length && !chat.error) || chat.streaming">
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                  </svg>
+                </button>
               </div>
             </div>
-          </div>
 
-          <div class="flex-1 rounded-lg border border-slate-800 bg-slate-900/80 flex flex-col min-h-[20rem] max-h-[calc(100vh-18rem)]">
-            <div class="flex-1 overflow-y-auto p-4 space-y-3" x-ref="chatMessages">
+            <div class="flex-1 min-h-0 overflow-y-auto px-2 py-2 space-y-3" x-ref="chatMessages"
+              @scroll="onChatScroll()">
               <p x-show="!chat.messages.length && !chat.streaming" class="text-sm text-slate-500 text-center py-8">
                 Send a message to start chatting with the selected model.
               </p>
-              <template x-for="(msg, idx) in chat.messages" :key="'msg-' + idx">
+              <template x-for="(msg, idx) in chat.messages" :key="'msg-' + idx + '-' + (msg.role || '')">
                 <div class="flex" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
-                  <div class="max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words"
+                  <div class="text-sm"
                     :class="msg.role === 'user'
-                      ? 'bg-blue-600/80 text-white'
-                      : 'bg-slate-800 text-slate-100'">
-                    <div class="text-[10px] uppercase tracking-wide mb-1 opacity-60" x-text="msg.role"></div>
-                    <div x-text="msg.content || (chat.streaming && idx === chat.messages.length - 1 ? '…' : '')"></div>
+                      ? 'chat-user-bubble max-w-[min(85%,42rem)] rounded-2xl bg-blue-600/85 text-white px-4 py-3'
+                      : 'w-full max-w-3xl rounded-2xl bg-slate-800/70 text-slate-100 px-4 py-3'">
+                    <div x-show="msg.role === 'assistant' && chat.streaming && idx === chat.messages.length - 1 && !(msg.content || '').trim()"
+                      class="chat-loader">
+                      <span class="chat-loader-spin" aria-hidden="true"></span>
+                      <span>Waiting for model…</span>
+                    </div>
+                    <div class="chat-md"
+                      x-show="!(msg.role === 'assistant' && chat.streaming && idx === chat.messages.length - 1 && !(msg.content || '').trim())"
+                      x-html="renderChatMarkdown(msg.content || '')"></div>
                   </div>
                 </div>
               </template>
             </div>
-            <p x-show="chat.error" class="px-4 pb-2 text-xs text-red-400 break-words" x-text="chat.error"></p>
-            <div class="border-t border-slate-800 p-3 space-y-2">
+
+            <p x-show="chat.error" class="px-2 pb-1 text-xs text-red-400 break-words" x-text="chat.error"></p>
+            <div class="border-t border-slate-800 p-2 space-y-2">
               <textarea x-model="chat.input" rows="3"
                 @keydown.enter.exact.prevent="sendChatMessage()"
-                :disabled="chat.streaming || !chat.model"
+                :disabled="chat.streaming || !chat.model || !chat.sessionId"
                 placeholder="Type a message… (Enter to send, Shift+Enter for newline)"
-                class="w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/40 disabled:opacity-50"></textarea>
+                class="w-full resize-y rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/40 disabled:opacity-50"></textarea>
               <div class="flex items-center justify-end gap-2">
                 <button type="button" x-show="chat.streaming" @click="stopChatStream()"
-                  class="rounded-md bg-amber-600/80 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500 transition">Stop</button>
+                  class="btn-icon btn-icon-warn" title="Stop">
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z" />
+                  </svg>
+                </button>
                 <button type="button" @click="sendChatMessage()"
-                  :disabled="chat.streaming || !chat.model || !(chat.input || '').trim()"
-                  class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 transition disabled:opacity-40">Send</button>
+                  :disabled="chat.streaming || !chat.model || !chat.sessionId || !(chat.input || '').trim()"
+                  class="btn-icon btn-icon-primary" title="Send">
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                  </svg>
+                </button>
               </div>
             </div>
           </div>
@@ -2140,6 +2316,11 @@
           pickerOpen: false,
           modelFilter: '',
           abort: null,
+          sessions: [],
+          sessionId: null,
+          sessionTitle: 'New chat',
+          saving: false,
+          stickToBottom: true,
         },
         expandedModelDetails: {},
         expandedModelGroups: {},
@@ -2721,6 +2902,18 @@
           return (this.status.hidden_models ?? []).includes(name);
         },
 
+        isHostedRemoteKind(kind) {
+          const k = String(kind || '').toLowerCase();
+          return k === 'openai' || k === 'custom' || k === 'customendpoint';
+        },
+
+        originLocation(kind, sourceKind) {
+          if (kind === 'local') {
+            return this.isHostedRemoteKind(sourceKind) ? 'remote' : 'local';
+          }
+          return 'remote';
+        },
+
         unifiedModelsList() {
           const hidden = new Set(this.status.hidden_models ?? []);
           const byName = new Map();
@@ -2743,11 +2936,14 @@
             const srv = (this.status.llm_servers ?? []).find(
               (s) => String(s.id) === String(m._source_server ?? ''),
             );
+            const sourceKind = srv?.kind || m._source_kind || 'local';
             entry.origins.push({
               kind: 'local',
               id: String(m._source_server || 'local'),
               label: srv ? this.serverDisplayLabel(srv) : (m._source_kind || 'Local'),
               short: srv?.label || m._source_kind || 'Local',
+              sourceKind,
+              location: this.originLocation('local', sourceKind),
             });
           }
 
@@ -2764,6 +2960,8 @@
                 id: c.cluster_id,
                 label: `Cluster · ${label}`,
                 short: label,
+                sourceKind: 'cluster',
+                location: 'remote',
               });
               addedRemote = true;
             }
@@ -2775,6 +2973,8 @@
                 id: s.swarm_id,
                 label: `Swarm · ${label}`,
                 short: label,
+                sourceKind: 'swarm',
+                location: 'remote',
               });
               addedRemote = true;
             }
@@ -2784,6 +2984,8 @@
                 id: 'network',
                 label: 'Network',
                 short: 'Network',
+                sourceKind: 'network',
+                location: 'remote',
               });
             }
           }
@@ -2888,9 +3090,8 @@
             const data = await r.json();
             this.chat.models = data.models ?? [];
             if (this.chat.model && !this.chat.models.some((m) => m.name === this.chat.model)) {
-              this.chat.model = '';
-            }
-            if (!this.chat.model && this.chat.models.length) {
+              // keep selected model name even if temporarily missing from list
+            } else if (!this.chat.model && this.chat.models.length) {
               this.chat.model = this.chat.models[0].name;
             }
           } catch (e) {
@@ -2917,16 +3118,203 @@
           );
         },
 
-        selectChatModel(name) {
+        async selectChatModel(name) {
           this.chat.model = name;
           this.chat.pickerOpen = false;
           this.chat.modelFilter = '';
+          if (this.chat.sessionId) {
+            await this.persistChatSession();
+          }
         },
 
-        clearChat() {
+        renderChatMarkdown(text) {
+          const raw = text == null ? '' : String(text);
+          if (!raw) return '';
+          try {
+            const html = (typeof marked !== 'undefined' && marked.parse)
+              ? marked.parse(raw, { breaks: true, gfm: true })
+              : raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+            if (typeof DOMPurify !== 'undefined' && DOMPurify.sanitize) {
+              return DOMPurify.sanitize(html);
+            }
+            return html;
+          } catch (e) {
+            console.error(e);
+            return raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          }
+        },
+
+        formatChatTime(unix) {
+          if (!unix) return '';
+          const d = new Date(unix * 1000);
+          const now = Date.now();
+          const diff = now - d.getTime();
+          if (diff < 60_000) return 'just now';
+          if (diff < 3_600_000) return Math.floor(diff / 60_000) + 'm';
+          if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + 'h';
+          return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        },
+
+        async loadChatSessions() {
+          try {
+            const r = await fetch('/api/client/chat/sessions');
+            if (!r.ok) {
+              const t = await r.text();
+              this.chat.error = t || ('Failed to load chats (' + r.status + ')');
+              return;
+            }
+            const data = await r.json();
+            this.chat.sessions = data.sessions ?? [];
+            if (this.chat.sessionId && this.chat.sessions.some((s) => s.id === this.chat.sessionId)) {
+              return;
+            }
+            if (this.chat.sessions.length) {
+              await this.selectChatSession(this.chat.sessions[0].id);
+            } else {
+              await this.createChatSession();
+            }
+          } catch (e) {
+            console.error(e);
+            this.chat.error = String(e?.message || e);
+          }
+        },
+
+        async createChatSession() {
+          if (this.chat.streaming) this.stopChatStream();
+          this.chat.saving = true;
+          this.chat.error = '';
+          try {
+            const r = await fetch('/api/client/chat/sessions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: this.chat.model || undefined,
+                title: 'New chat',
+              }),
+            });
+            if (!r.ok) {
+              const t = await r.text();
+              throw new Error(t || ('Create chat failed (' + r.status + ')'));
+            }
+            const session = await r.json();
+            this.chat.sessionId = session.id;
+            this.chat.sessionTitle = session.title || 'New chat';
+            this.chat.messages = session.messages ?? [];
+            if (session.model) this.chat.model = session.model;
+            else if (!this.chat.model && this.chat.models.length) this.chat.model = this.chat.models[0].name;
+            await this.refreshChatSessionList();
+            this.scrollChatToBottom(true);
+          } catch (e) {
+            console.error(e);
+            this.chat.error = String(e?.message || e);
+          } finally {
+            this.chat.saving = false;
+          }
+        },
+
+        async refreshChatSessionList() {
+          try {
+            const r = await fetch('/api/client/chat/sessions');
+            if (!r.ok) return;
+            const data = await r.json();
+            this.chat.sessions = data.sessions ?? [];
+          } catch (e) {
+            console.error(e);
+          }
+        },
+
+        async selectChatSession(id) {
+          if (!id || id === this.chat.sessionId) return;
+          if (this.chat.streaming) this.stopChatStream();
+          this.chat.error = '';
+          try {
+            const r = await fetch('/api/client/chat/sessions/' + encodeURIComponent(id));
+            if (!r.ok) {
+              const t = await r.text();
+              throw new Error(t || ('Load chat failed (' + r.status + ')'));
+            }
+            const session = await r.json();
+            this.chat.sessionId = session.id;
+            this.chat.sessionTitle = session.title || 'New chat';
+            this.chat.messages = session.messages ?? [];
+            if (session.model) this.chat.model = session.model;
+            this.scrollChatToBottom(true);
+          } catch (e) {
+            console.error(e);
+            this.chat.error = String(e?.message || e);
+          }
+        },
+
+        async deleteChatSession(id) {
+          if (!id) return;
+          if (!confirm('Delete this chat?')) return;
+          if (this.chat.streaming && this.chat.sessionId === id) this.stopChatStream();
+          this.chat.saving = true;
+          try {
+            const r = await fetch('/api/client/chat/sessions/' + encodeURIComponent(id), {
+              method: 'DELETE',
+            });
+            if (!r.ok && r.status !== 204) {
+              const t = await r.text();
+              throw new Error(t || ('Delete failed (' + r.status + ')'));
+            }
+            const wasActive = this.chat.sessionId === id;
+            this.chat.sessions = (this.chat.sessions || []).filter((s) => s.id !== id);
+            if (wasActive) {
+              this.chat.sessionId = null;
+              this.chat.messages = [];
+              this.chat.sessionTitle = 'New chat';
+              if (this.chat.sessions.length) {
+                await this.selectChatSession(this.chat.sessions[0].id);
+              } else {
+                await this.createChatSession();
+              }
+            }
+          } catch (e) {
+            console.error(e);
+            this.chat.error = String(e?.message || e);
+          } finally {
+            this.chat.saving = false;
+          }
+        },
+
+        async persistChatSession() {
+          if (!this.chat.sessionId) return;
+          this.chat.saving = true;
+          try {
+            const r = await fetch('/api/client/chat/sessions/' + encodeURIComponent(this.chat.sessionId), {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: this.chat.sessionTitle || 'New chat',
+                model: this.chat.model || '',
+                messages: (this.chat.messages || []).map((m) => ({
+                  role: m.role,
+                  content: m.content || '',
+                })),
+              }),
+            });
+            if (!r.ok) {
+              const t = await r.text();
+              throw new Error(t || ('Save chat failed (' + r.status + ')'));
+            }
+            const session = await r.json();
+            this.chat.sessionTitle = session.title || this.chat.sessionTitle;
+            await this.refreshChatSessionList();
+          } catch (e) {
+            console.error(e);
+            this.chat.error = String(e?.message || e);
+          } finally {
+            this.chat.saving = false;
+          }
+        },
+
+        async clearChat() {
           if (this.chat.streaming) this.stopChatStream();
           this.chat.messages = [];
           this.chat.error = '';
+          this.chat.sessionTitle = 'New chat';
+          await this.persistChatSession();
         },
 
         stopChatStream() {
@@ -2935,23 +3323,37 @@
           this.chat.streaming = false;
         },
 
-        scrollChatToBottom() {
+        isChatNearBottom(threshold = 80) {
+          const el = this.$refs.chatMessages;
+          if (!el) return true;
+          return (el.scrollHeight - el.scrollTop - el.clientHeight) <= threshold;
+        },
+
+        onChatScroll() {
+          this.chat.stickToBottom = this.isChatNearBottom();
+        },
+
+        scrollChatToBottom(force = false) {
           this.$nextTick(() => {
             const el = this.$refs.chatMessages;
-            if (el) el.scrollTop = el.scrollHeight;
+            if (!el) return;
+            if (!force && !this.chat.stickToBottom) return;
+            el.scrollTop = el.scrollHeight;
+            this.chat.stickToBottom = true;
           });
         },
 
         async sendChatMessage() {
           const text = (this.chat.input || '').trim();
-          if (!text || !this.chat.model || this.chat.streaming) return;
+          if (!text || !this.chat.model || !this.chat.sessionId || this.chat.streaming) return;
 
           this.chat.error = '';
           this.chat.messages.push({ role: 'user', content: text });
           this.chat.input = '';
           const history = this.chat.messages.map((m) => ({ role: m.role, content: m.content }));
           this.chat.messages.push({ role: 'assistant', content: '' });
-          this.scrollChatToBottom();
+          this.chat.stickToBottom = true;
+          this.scrollChatToBottom(true);
 
           const abort = new AbortController();
           this.chat.abort = abort;
@@ -2978,6 +3380,7 @@
               const data = await r.json();
               const content = data?.message?.content ?? data?.response ?? '';
               this.chat.messages[this.chat.messages.length - 1].content = content;
+              this.scrollChatToBottom();
               return;
             }
 
@@ -3030,6 +3433,7 @@
             this.chat.streaming = false;
             this.chat.abort = null;
             this.scrollChatToBottom();
+            await this.persistChatSession();
           }
         },
 
@@ -3927,6 +4331,7 @@
           if (tab === 'chat') {
             await this.refreshStatus();
             await this.loadChatModels();
+            await this.loadChatSessions();
             this.updateStatusPollInterval();
             return;
           }

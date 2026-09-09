@@ -3,7 +3,7 @@ mod models;
 mod secrets;
 
 use crate::gpu_history::unix_now;
-use models::{BlockedPeerRecord, PeerRecord, PeerTransaction};
+use models::{BlockedPeerRecord, ChatSessionRecord, PeerRecord, PeerTransaction};
 use native_db::{Builder, Database, Models};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -47,6 +47,7 @@ static MODELS: Lazy<Models> = Lazy::new(|| {
     models.define::<models::v1::Libp2pKeyRecord>().unwrap();
     models.define::<models::v1::RoomKeyRecord>().unwrap();
     models.define::<models::v1::PeerAuthKeyRecord>().unwrap();
+    models.define::<models::v1::ChatSessionRecord>().unwrap();
     models
 });
 
@@ -115,6 +116,32 @@ pub struct BlockedPeerView {
     pub blocked_at_unix: u64,
     pub source: String,
     pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ChatSessionSummary {
+    pub id: String,
+    pub title: String,
+    pub model: String,
+    pub created_at_unix: u64,
+    pub updated_at_unix: u64,
+    pub message_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ChatSessionView {
+    pub id: String,
+    pub title: String,
+    pub model: String,
+    pub created_at_unix: u64,
+    pub updated_at_unix: u64,
+    pub messages: Vec<ChatMessage>,
 }
 
 #[derive(Clone)]
@@ -606,6 +633,138 @@ impl TxStore {
         }
         rows.sort_by(|a, b| b.blocked_at_unix.cmp(&a.blocked_at_unix));
         Ok(rows)
+    }
+
+    fn parse_chat_messages(messages_json: &str) -> Vec<ChatMessage> {
+        serde_json::from_str(messages_json).unwrap_or_default()
+    }
+
+    fn chat_session_view(rec: ChatSessionRecord) -> ChatSessionView {
+        let messages = Self::parse_chat_messages(&rec.messages_json);
+        ChatSessionView {
+            id: rec.id,
+            title: rec.title,
+            model: rec.model,
+            created_at_unix: rec.created_at_unix,
+            updated_at_unix: rec.updated_at_unix,
+            messages,
+        }
+    }
+
+    fn chat_session_summary(rec: &ChatSessionRecord) -> ChatSessionSummary {
+        let message_count = Self::parse_chat_messages(&rec.messages_json).len();
+        ChatSessionSummary {
+            id: rec.id.clone(),
+            title: rec.title.clone(),
+            model: rec.model.clone(),
+            created_at_unix: rec.created_at_unix,
+            updated_at_unix: rec.updated_at_unix,
+            message_count,
+        }
+    }
+
+    pub async fn list_chat_sessions(&self) -> anyhow::Result<Vec<ChatSessionSummary>> {
+        let store = self.clone();
+        tokio::task::spawn_blocking(move || store.list_chat_sessions_sync())
+            .await?
+            .map_err(anyhow::Error::from)
+    }
+
+    pub async fn get_chat_session(&self, id: &str) -> anyhow::Result<Option<ChatSessionView>> {
+        let store = self.clone();
+        let id = id.to_string();
+        tokio::task::spawn_blocking(move || store.get_chat_session_sync(&id))
+            .await?
+            .map_err(anyhow::Error::from)
+    }
+
+    pub async fn upsert_chat_session(
+        &self,
+        id: String,
+        title: String,
+        model: String,
+        messages: Vec<ChatMessage>,
+        created_at_unix: Option<u64>,
+    ) -> anyhow::Result<ChatSessionView> {
+        let store = self.clone();
+        tokio::task::spawn_blocking(move || {
+            store.upsert_chat_session_sync(id, title, model, messages, created_at_unix)
+        })
+        .await?
+        .map_err(anyhow::Error::from)
+    }
+
+    pub async fn delete_chat_session(&self, id: &str) -> anyhow::Result<bool> {
+        let store = self.clone();
+        let id = id.to_string();
+        tokio::task::spawn_blocking(move || store.delete_chat_session_sync(&id))
+            .await?
+            .map_err(anyhow::Error::from)
+    }
+
+    fn list_chat_sessions_sync(&self) -> anyhow::Result<Vec<ChatSessionSummary>> {
+        let r = self.db.r_transaction()?;
+        let scan = r.scan().primary::<ChatSessionRecord>()?;
+        let mut rows = Vec::new();
+        for item in scan.all()? {
+            let rec = item?;
+            rows.push(Self::chat_session_summary(&rec));
+        }
+        rows.sort_by(|a, b| b.updated_at_unix.cmp(&a.updated_at_unix));
+        Ok(rows)
+    }
+
+    fn get_chat_session_sync(&self, id: &str) -> anyhow::Result<Option<ChatSessionView>> {
+        let r = self.db.r_transaction()?;
+        let rec: Option<ChatSessionRecord> = r.get().primary(id.to_string())?;
+        Ok(rec.map(Self::chat_session_view))
+    }
+
+    fn upsert_chat_session_sync(
+        &self,
+        id: String,
+        title: String,
+        model: String,
+        messages: Vec<ChatMessage>,
+        created_at_unix: Option<u64>,
+    ) -> anyhow::Result<ChatSessionView> {
+        let now = unix_now();
+        let existing = {
+            let r = self.db.r_transaction()?;
+            let rec: Option<ChatSessionRecord> = r.get().primary(id.clone())?;
+            rec
+        };
+        let created = created_at_unix
+            .or_else(|| existing.as_ref().map(|e| e.created_at_unix))
+            .unwrap_or(now);
+        let messages_json = serde_json::to_string(&messages)?;
+        let record = ChatSessionRecord {
+            id,
+            title,
+            model,
+            created_at_unix: created,
+            updated_at_unix: now,
+            messages_json,
+        };
+        let rw = self.db.rw_transaction()?;
+        rw.upsert(record.clone())?;
+        rw.commit()?;
+        Ok(Self::chat_session_view(record))
+    }
+
+    fn delete_chat_session_sync(&self, id: &str) -> anyhow::Result<bool> {
+        let existing = {
+            let r = self.db.r_transaction()?;
+            let rec: Option<ChatSessionRecord> = r.get().primary(id.to_string())?;
+            rec
+        };
+        let Some(record) = existing else {
+            return Ok(false);
+        };
+        let rw = self.db.rw_transaction()?;
+        rw.remove(record)?;
+        rw.commit()?;
+        Ok(true)
     }
 
     fn load_blocked_peer(&self, peer_id: &str) -> Option<BlockedPeerRecord> {

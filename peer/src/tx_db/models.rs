@@ -10,6 +10,7 @@ pub type LlmServerAdminTokenRecord = v1::LlmServerAdminTokenRecord;
 pub type Libp2pKeyRecord = v1::Libp2pKeyRecord;
 pub type RoomKeyRecord = v1::RoomKeyRecord;
 pub type PeerAuthKeyRecord = v1::PeerAuthKeyRecord;
+pub type ChatSessionRecord = v1::ChatSessionRecord;
 
 pub mod v1 {
     use super::*;
@@ -111,5 +112,20 @@ pub mod v1 {
         #[primary_key]
         pub record_id: String,
         pub seed_hex: String,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    #[native_model(id = 9, version = 1)]
+    #[native_db]
+    pub struct ChatSessionRecord {
+        #[primary_key]
+        pub id: String,
+        pub title: String,
+        pub model: String,
+        pub created_at_unix: u64,
+        #[secondary_key]
+        pub updated_at_unix: u64,
+        /// JSON array of `{ "role": "user"|"assistant", "content": "..." }`.
+        pub messages_json: String,
     }
 }
