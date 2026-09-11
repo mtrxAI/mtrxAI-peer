@@ -245,7 +245,7 @@ jobs:
             bundle: release/windows/release/bundle/**
           - os: macos
             arch: arm64
-            runner: macos-14
+            runner: macos-15
             platform: macos/aarch64
             artifact: attestation-desktop-macos-arm64
             binary: release/macos/release/mtrxai
@@ -324,7 +324,7 @@ jobs:
       - name: Build attested desktop (unix)
         if: matrix.os != 'windows'
         run: |
-          chmod +x scripts/build-tauri.sh scripts/write-allowed-build-manifest.sh
+          chmod +x scripts/build-tauri.sh scripts/write-allowed-build-manifest.sh scripts/pack-macos-dmg.sh
           scripts/build-tauri.sh --attestation
 
       - name: Build attested desktop (windows)

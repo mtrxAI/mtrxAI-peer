@@ -65,7 +65,29 @@ fi
 
 cd "${TAURI_DIR}"
 npm install
-npm run build
+
+# GitHub Actions sets CI=true. Tauri's bundle_dmg.sh uses Finder AppleScript and
+# SetFile; that step fails on hosted macOS runners and would abort the whole
+# attested desktop job (and skip allowlist publishing). Build the .app, then
+# pack a plain UDZO DMG with hdiutil.
+if [[ "${OS}" == "macos" && "${CI:-}" == "true" ]]; then
+    echo "==> CI macOS: tauri --bundles app (skip bundle_dmg.sh)"
+    npm run build -- --bundles app
+    VERSION="${MTRXAI_VERSION:-}"
+    if [[ -z "${VERSION}" ]]; then
+        VERSION="$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')"
+    fi
+    case "$(uname -m)" in
+        arm64) ARCH_LABEL=aarch64 ;;
+        x86_64) ARCH_LABEL=x64 ;;
+        *) ARCH_LABEL="$(uname -m)" ;;
+    esac
+    APP_BUNDLE="${PROFILE_DIR}/bundle/macos/mtrxAI.app"
+    DMG_PATH="${PROFILE_DIR}/bundle/dmg/mtrxAI_${VERSION}_${ARCH_LABEL}.dmg"
+    bash "${SCRIPT_DIR}/pack-macos-dmg.sh" "${APP_BUNDLE}" "${DMG_PATH}" "mtrxAI"
+else
+    npm run build
+fi
 
 echo ""
 echo "==> Build complete"
