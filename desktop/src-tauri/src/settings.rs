@@ -133,3 +133,12 @@ pub fn client_config_path(app: &AppHandle) -> Result<PathBuf> {
     fs::create_dir_all(&dir).context("failed to create app config directory")?;
     Ok(dir.join("client_config.json"))
 }
+
+pub fn tx_db_path(app: &AppHandle) -> Result<PathBuf> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .context("failed to resolve app config directory")?;
+    fs::create_dir_all(&dir).context("failed to create app config directory")?;
+    Ok(dir.join("mtrxai_transactions.db"))
+}

@@ -116,6 +116,59 @@ Saved under the OS app config directory:
 
 To re-prompt for the lobby server, delete `desktop_settings.json` and restart the app.
 
+## Android (chat APK)
+
+The same Tauri shell packages an Android APK that runs the peer in-process and opens the chat-first UI (`?surface=mobile`). The phone is a **consumer**: join a cluster/swarm, pick a remote model, chat. It does not host local models or probe GPUs.
+
+### Prerequisites
+
+- JDK 17+
+- Android SDK + NDK (`ANDROID_HOME`, `NDK_HOME`)
+- Rust targets: `aarch64-linux-android` (and `x86_64-linux-android` for emulators)
+
+```bash
+rustup target add aarch64-linux-android x86_64-linux-android
+cd desktop
+npm install
+npm run android:init   # once — generates src-tauri/gen/android
+```
+
+### Build
+
+```bash
+cd desktop
+npm run android:build
+# or from repo root:
+#   ./scripts/build-tauri-android.sh --target aarch64
+#   ./scripts/build-tauri-android.sh --attestation --target aarch64
+# Windows:
+#   .\scripts\build-tauri-android.ps1 -Target aarch64
+```
+
+Release APK (optimized) is written to:
+
+`release/android/release/mtrxai-android-aarch64.apk`
+
+Debug APK (larger, faster compile) still appears under:
+
+`src-tauri/gen/android/app/build/outputs/apk/universal/debug/`
+
+GitHub Releases (`v*` tags / `create_github_release`) publish `android-aarch64.zip` with the APK and attestation files.
+
+### Dev on device/emulator
+
+```bash
+npm run android:dev
+```
+
+On Android the shell sets `MTRXAI_GPU_PROBE=off`, stores `client_config.json` / `mtrxai_transactions.db` under the app config directory, and opens `http://127.0.0.1:<port>/?surface=mobile`. Cleartext is allowed only for localhost (see `network_security_config.xml`).
+
+### Preview mobile UI in a desktop browser
+
+With a running peer, open:
+
+`http://127.0.0.1:11345/?surface=mobile`
+
 ## Related documentation
 
 - [Root README](../README.md) — architecture, Docker Compose, peer proxy

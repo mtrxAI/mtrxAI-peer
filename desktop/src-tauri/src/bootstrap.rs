@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+use tauri_plugin_dialog::MessageDialogKind;
+#[cfg(desktop)]
+use tauri_plugin_dialog::DialogExt;
 use tokio::task::JoinHandle;
 
 use crate::settings;
@@ -43,6 +45,7 @@ fn default_attestation_skip(lobby_host: &str) -> &'static str {
 
 pub fn apply_client_env(app: &AppHandle, lobby_host: &str, proxy_port: u16) -> Result<()> {
     let config_path = settings::client_config_path(app)?;
+    let tx_db_path = settings::tx_db_path(app)?;
     let lobby_host = settings::normalize_lobby_host(lobby_host)?;
     let lobby_tls = lobby_host.ends_with(":443");
     let attestation_skip = default_attestation_skip(&lobby_host);
@@ -52,11 +55,18 @@ pub fn apply_client_env(app: &AppHandle, lobby_host: &str, proxy_port: u16) -> R
         std::env::set_var("MTRXAI_LOBBY_HOST", &lobby_host);
         std::env::set_var("MTRXAI_PROXY_PORT", proxy_port.to_string());
         std::env::set_var("MTRXAI_CONFIG_PATH", config_path.to_string_lossy().as_ref());
+        std::env::set_var("MTRXAI_TX_DB_PATH", tx_db_path.to_string_lossy().as_ref());
         if !attestation_skip.is_empty() {
             std::env::set_var("MTRXAI_ATTESTATION_SKIP", attestation_skip);
         }
         if lobby_tls {
             std::env::set_var("MTRXAI_LOBBY_TLS", "1");
+        }
+        // Mobile consumer peers never host models or probe GPUs.
+        #[cfg(target_os = "android")]
+        {
+            std::env::set_var("MTRXAI_GPU_PROBE", "off");
+            std::env::set_var("MTRXAI_INFERENCE_SIDECAR", "0");
         }
     }
 
@@ -143,19 +153,30 @@ pub async fn start_client_and_open_main(
     result
 }
 
+fn main_window_url(proxy_port: u16) -> Result<url::Url> {
+    let path = if cfg!(target_os = "android") {
+        format!("http://127.0.0.1:{proxy_port}/?surface=mobile")
+    } else {
+        format!("http://127.0.0.1:{proxy_port}")
+    };
+    path.parse()
+        .map_err(|e| anyhow::anyhow!("invalid client URL: {e}"))
+}
+
 pub fn open_main_window(app: &AppHandle, proxy_port: u16) -> Result<()> {
     if app.get_webview_window("main").is_some() {
         return Ok(());
     }
 
-    let url = format!("http://127.0.0.1:{proxy_port}")
-        .parse()
-        .map_err(|e| anyhow::anyhow!("invalid client URL: {e}"))?;
-
-    WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
+    let url = main_window_url(proxy_port)?;
+    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
         .title("mtrxAI")
-        .inner_size(1280.0, 860.0)
-        .resizable(true)
+        .resizable(true);
+
+    #[cfg(not(target_os = "android"))]
+    let builder = builder.inner_size(1280.0, 860.0);
+
+    builder
         .build()
         .map_err(|e| anyhow::anyhow!("failed to create main window: {e}"))?;
 
@@ -167,11 +188,14 @@ pub fn open_setup_window(app: &AppHandle) -> Result<()> {
         return Ok(());
     }
 
-    WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("setup.html".into()))
+    let builder = WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("setup.html".into()))
         .title("mtrxAI — Lobby Server")
-        .inner_size(480.0, 320.0)
-        .resizable(false)
-        .always_on_top(true)
+        .resizable(false);
+
+    #[cfg(not(target_os = "android"))]
+    let builder = builder.inner_size(480.0, 320.0).always_on_top(true);
+
+    builder
         .build()
         .map_err(|e| anyhow::anyhow!("failed to create setup window: {e}"))?;
 
@@ -179,11 +203,20 @@ pub fn open_setup_window(app: &AppHandle) -> Result<()> {
 }
 
 pub fn show_error_and_exit(app: &AppHandle, message: &str) {
-    app.dialog()
-        .message(message)
-        .title("mtrxAI")
-        .kind(MessageDialogKind::Error)
-        .blocking_show();
+    eprintln!("mtrxAI error: {message}");
+    #[cfg(desktop)]
+    {
+        app.dialog()
+            .message(message)
+            .title("mtrxAI")
+            .kind(MessageDialogKind::Error)
+            .blocking_show();
+    }
+    #[cfg(mobile)]
+    {
+        let _ = app;
+        let _ = MessageDialogKind::Error;
+    }
 
     app.exit(1);
 }

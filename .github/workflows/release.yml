@@ -8,7 +8,7 @@ on:
         required: false
         type: string
       create_github_release:
-        description: Create/update GitHub Release with desktop installers and manifests
+        description: Create/update GitHub Release with desktop installers, Android APK, and manifests
         type: boolean
         default: false
       push_docker:
@@ -374,12 +374,136 @@ jobs:
             mtrxAI-peer/release/${{ matrix.os }}/release/allowed_build.credentials.env
             mtrxAI-peer/${{ matrix.bundle }}
 
+  android:
+    name: Android aarch64 APK
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mtrxAI-peer
+    env:
+      MTRXAI_VERSION: ${{ needs.resolve-version.outputs.version }}
+      MTRXAI_BUILD_PLATFORM: android/aarch64
+    steps:
+      - name: Checkout peer
+        uses: actions/checkout@v4
+        with:
+          path: mtrxAI-peer
+
+      - name: Checkout common
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
+          path: mtrxAI-common
+          ref: ${{ vars.MTRXAI_COMMON_REF || 'main' }}
+          token: ${{ secrets.MTRXAI_COMMON_READ_TOKEN || github.token }}
+
+      - name: Sync package version
+        run: python3 scripts/sync_release_version.py sync "${MTRXAI_VERSION}"
+
+      - name: Generate attestation credentials
+        run: |
+          echo "MTRXAI_BUILD_ID=$(uuidgen)" >> "$GITHUB_ENV"
+          echo "MTRXAI_ATTESTATION_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;35.0.0 ndk;27.2.12479018"
+
+      - name: Export NDK_HOME
+        run: |
+          echo "ANDROID_HOME=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
+          echo "NDK_HOME=${ANDROID_SDK_ROOT}/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "${ANDROID_SDK_ROOT}/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            mtrxAI-peer/desktop/src-tauri
+            mtrxAI-peer/peer
+          key: android-aarch64
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: mtrxAI-peer/desktop/package-lock.json
+
+      - name: Configure Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${ANDROID_KEYSTORE_BASE64}" ]]; then
+            KEYSTORE_PATH="${RUNNER_TEMP}/mtrxai-release.keystore"
+            echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "${KEYSTORE_PATH}"
+            echo "ANDROID_KEYSTORE_PATH=${KEYSTORE_PATH}" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=${ANDROID_KEYSTORE_PASSWORD}" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=${ANDROID_KEY_ALIAS}" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}" >> "$GITHUB_ENV"
+            echo "Using Play Store / release keystore"
+          else
+            mkdir -p "${HOME}/.android"
+            if [[ ! -f "${HOME}/.android/debug.keystore" ]]; then
+              keytool -genkeypair -v \
+                -keystore "${HOME}/.android/debug.keystore" \
+                -storepass android -keypass android \
+                -alias androiddebugkey \
+                -keyalg RSA -keysize 2048 -validity 10000 \
+                -dname "CN=Android Debug,O=Android,C=US"
+            fi
+            echo "No ANDROID_KEYSTORE_BASE64 — signing APK with debug keystore (sideload)"
+          fi
+
+      - name: Build attested Android APK
+        run: |
+          chmod +x scripts/build-tauri-android.sh scripts/write-allowed-build-manifest.sh
+          scripts/build-tauri-android.sh --attestation --target aarch64
+
+      - name: Verify attestation
+        run: |
+          set -euo pipefail
+          MANIFEST="release/android/release/allowed_build.json"
+          BINARY="release/android/release/libmtrxai_tauri.so"
+          EXPECTED="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["binary_sha256"])' "${MANIFEST}")"
+          ACTUAL="$(sha256sum "${BINARY}" | awk '{print $1}')"
+          if [[ "${EXPECTED}" != "${ACTUAL}" ]]; then
+            echo "::error::allowed_build.json hash ${EXPECTED} != binary ${ACTUAL}" >&2
+            exit 1
+          fi
+          BUILD_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["build_id"])' "${MANIFEST}")"
+          echo "Android aarch64 attested: build_id=${BUILD_ID} sha=${ACTUAL:0:16}..."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: attestation-android-aarch64
+          if-no-files-found: error
+          path: |
+            mtrxAI-peer/release/android/release/mtrxai-android-aarch64.apk
+            mtrxAI-peer/release/android/release/libmtrxai_tauri.so
+            mtrxAI-peer/release/android/release/allowed_build.json
+            mtrxAI-peer/release/android/release/allowed_build.credentials.env
+
   github-release:
     name: GitHub Release assets
     needs:
       - resolve-version
       - docker
       - desktop
+      - android
     if: >-
       always() &&
       !cancelled() &&
@@ -388,7 +512,8 @@ jobs:
         (github.event_name == 'workflow_dispatch' && inputs.create_github_release)
       ) &&
       needs.docker.result == 'success' &&
-      needs.desktop.result == 'success'
+      needs.desktop.result == 'success' &&
+      needs.android.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -416,6 +541,9 @@ jobs:
               attestation-docker-linux-*)
                 folder="docker-linux-${artifact#attestation-docker-linux-}"
                 ;;
+              attestation-android-*)
+                folder="android-${artifact#attestation-android-}"
+                ;;
               *)
                 folder="${artifact#attestation-}"
                 ;;
@@ -438,6 +566,8 @@ jobs:
             -name '*.msi' -o \
             -name '*setup.exe' -o \
             -name '*.tar.gz' -o \
+            -name '*.apk' -o \
+            -name 'libmtrxai_tauri.so' -o \
             -path 'dist/*/mtrxai' -o \
             -path 'dist/*/mtrxai.exe' \
           \) -print0)
@@ -476,8 +606,11 @@ jobs:
             | Windows | **x64 (most PCs)** | `desktop-windows-amd64.zip` |
             | Windows | arm64 | `desktop-windows-arm64.zip` |
             | macOS | arm64 | `desktop-macos-arm64.zip` |
+            | Android | aarch64 | `android-aarch64.zip` |
 
-            Each zip contains the portable binary, installers (`.msi` / `*-setup.exe` / `.AppImage` / `.deb` / `.dmg`), and `allowed_build.json`.
+            Each desktop zip contains the portable binary, installers (`.msi` / `*-setup.exe` / `.AppImage` / `.deb` / `.dmg`), and `allowed_build.json`.
+
+            Android zip contains `mtrxai-android-aarch64.apk`, `libmtrxai_tauri.so`, and `allowed_build.json` (sideload with “unknown sources”; Play Store signing is optional via `ANDROID_KEYSTORE_*` secrets).
 
             Docker image tarballs: `docker-linux-amd64.zip`, `docker-linux-arm64.zip`.
 
@@ -491,11 +624,13 @@ jobs:
       - resolve-version
       - docker
       - desktop
+      - android
     if: >-
       always() &&
       !cancelled() &&
       needs.docker.result == 'success' &&
       needs.desktop.result == 'success' &&
+      needs.android.result == 'success' &&
       (
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
         github.event_name == 'workflow_dispatch'
@@ -530,6 +665,7 @@ jobs:
       - resolve-version
       - docker
       - desktop
+      - android
       - docker-manifest
       - dispatch-attestation
     if: always() && !cancelled()
@@ -570,6 +706,13 @@ jobs:
               done < <(find artifacts -name 'allowed_build.json' 2>/dev/null | sort)
             else
               echo "| (pending) | | | |"
+            fi
+            echo ""
+            echo "### Android"
+            if [[ "${{ needs.android.result }}" == "success" ]]; then
+              echo "APK artifact \`attestation-android-aarch64\` (arm64 phones)"
+            else
+              echo "**${{ needs.android.result }}**"
             fi
             echo ""
             echo "### Attestation allowlist"

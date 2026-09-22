@@ -18,7 +18,7 @@ Suggested GitHub repos: `mtrxAI-peer`, `mtrxAI-server`, `mtrxAI-common`, `mtrxAI
 | `DOCKERHUB_TOKEN` | Docker Hub access token (push). Required when `push_docker` is true / on `v*` tags. |
 | `MTRXAI_INFRA_DISPATCH_TOKEN` | PAT with `repo` scope on **mtrxAI-infra** — dispatches allowlist update for Docker manifests. |
 
-### Required for full Release (Docker + desktop)
+### Required for full Release (Docker + desktop + Android)
 
 | Secret | Purpose |
 |--------|---------|
@@ -26,13 +26,22 @@ Suggested GitHub repos: `mtrxAI-peer`, `mtrxAI-server`, `mtrxAI-common`, `mtrxAI
 | `DOCKERHUB_TOKEN` | Docker Hub access token (push). Required when `push_docker` is true / on `v*` tags. |
 | `MTRXAI_INFRA_DISPATCH_TOKEN` | PAT with `repo` scope on **mtrxAI-infra** — dispatches `client-release` so the lobby allowlist updates. |
 
+### Optional (Android Play Store signing)
+
+| Secret | Purpose |
+|--------|---------|
+| `ANDROID_KEYSTORE_BASE64` | Base64-encoded `.jks` / `.keystore` for release APK signing. If unset, CI signs with the Android debug keystore (sideload only). |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password. |
+| `ANDROID_KEY_ALIAS` | Key alias inside the keystore. |
+| `ANDROID_KEY_PASSWORD` | Key password (defaults to keystore password). |
+
 ### Optional
 
 | Secret | Purpose |
 |--------|---------|
 | _(none for Apple signing yet)_ | macOS builds are unsigned unless you add Apple Developer certs later. |
 
-Release artifacts (7): Docker linux amd64/arm64 + desktop linux/windows (amd64+arm64) + macos arm64.
+Release artifacts: Docker linux amd64/arm64 + desktop linux/windows (amd64+arm64) + macos arm64 + Android aarch64 APK.
 
 ---
 

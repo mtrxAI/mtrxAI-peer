@@ -9,6 +9,11 @@
     "prebuild": "npm run sync-assets",
     "dev": "tauri dev",
     "build": "tauri build",
+    "android:init": "tauri android init --ci",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build --target aarch64",
+    "android:build:debug": "tauri android build --debug --target aarch64",
+    "verify:mobile-ui": "node scripts/verify-mobile-ui.js",
     "icon": "tauri icon ../peer/ui/assets/logo.svg -o src-tauri/icons"
   },
   "devDependencies": {

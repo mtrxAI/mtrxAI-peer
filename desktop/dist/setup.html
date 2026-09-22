@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>mtrxAI — Lobby Server</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1117;
+      --card: #1a1d27;
+      --border: #2a3142;
+      --text: #e8eaef;
+      --muted: #94a3b8;
+      --accent: #3b82f6;
+      --danger: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+    }
+    .card {
+      width: 100%;
+      max-width: 26rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1.25rem 1.35rem;
+    }
+    h1 { margin: 0 0 0.35rem; font-size: 1.1rem; }
+    p { margin: 0 0 1rem; color: var(--muted); font-size: 0.85rem; line-height: 1.4; }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.35rem; }
+    input {
+      width: 100%;
+      margin-bottom: 0.9rem;
+      padding: 0.55rem 0.7rem;
+      border-radius: 0.45rem;
+      border: 1px solid var(--border);
+      background: #141722;
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 0.45rem;
+      padding: 0.65rem 0.85rem;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.6; cursor: wait; }
+    .error { color: var(--danger); font-size: 0.8rem; margin: 0 0 0.75rem; min-height: 1.1rem; }
+  </style>
+</head>
+<body>
+  <form class="card" id="setup-form">
+    <h1>Connect to lobby</h1>
+    <p>Enter the mtrxAI lobby host used for peer discovery and remote model routing.</p>
+    <div class="error" id="error"></div>
+    <label for="lobby">Lobby host</label>
+    <input id="lobby" name="lobby" autocomplete="off" placeholder="api.mtrxai.net" required />
+    <label for="port">Local proxy port</label>
+    <input id="port" name="port" type="number" min="1" max="65535" value="11345" required />
+    <button type="submit" id="submit">Continue</button>
+  </form>
+  <script>
+    const invoke = window.__TAURI__?.core?.invoke;
+    const errorEl = document.getElementById('error');
+    const lobbyEl = document.getElementById('lobby');
+    const portEl = document.getElementById('port');
+    const submitEl = document.getElementById('submit');
+
+    async function loadDefaults() {
+      if (!invoke) return;
+      try {
+        const defaults = await invoke('get_setup_defaults');
+        if (defaults?.lobbyHost) lobbyEl.value = defaults.lobbyHost;
+        if (defaults?.proxyPort) portEl.value = String(defaults.proxyPort);
+      } catch (e) {
+        errorEl.textContent = String(e);
+      }
+    }
+
+    document.getElementById('setup-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      errorEl.textContent = '';
+      if (!invoke) {
+        errorEl.textContent = 'Tauri bridge unavailable.';
+        return;
+      }
+      submitEl.disabled = true;
+      try {
+        await invoke('submit_lobby_setup', {
+          lobbyHost: lobbyEl.value.trim(),
+          proxyPort: Number(portEl.value),
+        });
+      } catch (e) {
+        errorEl.textContent = String(e);
+        submitEl.disabled = false;
+      }
+    });
+
+    loadDefaults();
+  </script>
+</body>
+</html>

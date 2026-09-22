@@ -1,0 +1,19 @@
+{
+  "identifier": "com.mtrxai.app",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "mtrxAI",
+        "fullscreen": false,
+        "resizable": true,
+        "create": false
+      }
+    ]
+  },
+  "bundle": {
+    "android": {
+      "minSdkVersion": 24
+    }
+  }
+}

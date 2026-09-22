@@ -47,6 +47,8 @@ case "${PLATFORM}" in
   darwin/amd64|darwin/x86_64|macos/amd64) PLATFORM="macos/x86_64" ;;
   windows/amd64) PLATFORM="windows/x86_64" ;;
   windows/arm64) PLATFORM="windows/aarch64" ;;
+  android/arm64|android/aarch64) PLATFORM="android/aarch64" ;;
+  android/x86_64|android/amd64) PLATFORM="android/x86_64" ;;
 esac
 
 VERSION="$(python3 "${ROOT_DIR}/scripts/sync_release_version.py" get-version 2>/dev/null || awk -F'"' '/^version = / {print $2; exit}' "${ROOT_DIR}/peer/Cargo.toml")"

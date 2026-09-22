@@ -174,6 +174,29 @@
     @keyframes chat-spin {
       to { transform: rotate(360deg); }
     }
+    /* Mobile surface (?surface=mobile): chat-first phone layout */
+    html.mobile-surface aside.fixed {
+      width: 3.5rem !important;
+    }
+    html.mobile-surface aside.fixed .sidebar-label,
+    html.mobile-surface aside.fixed .sidebar-brand-text {
+      display: none !important;
+    }
+    html.mobile-surface main {
+      margin-left: 3.5rem !important;
+    }
+    html.mobile-surface .chat-shell {
+      border-radius: 0;
+      border-left: none;
+      border-right: none;
+      min-height: calc(100dvh - 4.5rem);
+    }
+    html.mobile-surface .chat-composer {
+      padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+    }
+    html.mobile-surface .chat-model-picker {
+      max-width: 100% !important;
+    }
   </style>
 </head>
 <body class="h-full overflow-hidden text-slate-100 antialiased" x-data="mtrxaiApp()" x-init="init()" x-cloak>
@@ -933,8 +956,8 @@
         :class="sidebarCollapsed ? 'w-14' : 'w-56'">
         <div class="flex h-14 items-center gap-2 border-b border-slate-800 px-3">
           <img src="/assets/logo.svg" alt="mtrxAI" class="h-10 w-10 shrink-0 object-contain" />
-          <span x-show="!sidebarCollapsed" x-transition class="truncate text-sm font-semibold"><span class="text-white">mtrx</span><span class="text-emerald-400">AI</span><span class="text-white"> Client</span></span>
-          <button type="button" @click="sidebarCollapsed = !sidebarCollapsed"
+          <span x-show="!sidebarCollapsed" x-transition class="sidebar-brand-text truncate text-sm font-semibold"><span class="text-white">mtrx</span><span class="text-emerald-400">AI</span><span class="text-white"> Client</span></span>
+          <button type="button" @click="sidebarCollapsed = !sidebarCollapsed" x-show="!mobileSurface"
             class="ml-auto rounded-md p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-300"
             :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
             <svg class="h-4 w-4 transition-transform" :class="sidebarCollapsed ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -943,7 +966,7 @@
           </button>
         </div>
         <nav class="flex-1 space-y-0.5 overflow-y-auto p-2">
-          <button @click="switchDashboardTab('hardware')"
+          <button @click="switchDashboardTab('hardware')" x-show="!mobileSurface"
             :class="dashboardTab === 'hardware'
               ? 'border-l-2 border-blue-500 bg-slate-800 text-slate-100'
               : 'border-l-2 border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'"
@@ -952,9 +975,9 @@
             <svg class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
             </svg>
-            <span x-show="!sidebarCollapsed">Hardware</span>
+            <span x-show="!sidebarCollapsed" class="sidebar-label">Hardware</span>
           </button>
-          <button @click="switchDashboardTab('llm')"
+          <button @click="switchDashboardTab('llm')" x-show="!mobileSurface"
             :class="dashboardTab === 'llm'
               ? 'border-l-2 border-blue-500 bg-slate-800 text-slate-100'
               : 'border-l-2 border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'"
@@ -963,9 +986,9 @@
             <svg class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3V6a3 3 0 013-3h13.5a3 3 0 013 3v5.25m-18 0A3 3 0 006 16.5h12.75A3 3 0 0021 14.25m-18 0v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75v-2.25" />
             </svg>
-            <span x-show="!sidebarCollapsed">LLM Servers</span>
+            <span x-show="!sidebarCollapsed" class="sidebar-label">LLM Servers</span>
           </button>
-          <button @click="switchDashboardTab('models')"
+          <button @click="switchDashboardTab('models')" x-show="!mobileSurface"
             :class="dashboardTab === 'models'
               ? 'border-l-2 border-blue-500 bg-slate-800 text-slate-100'
               : 'border-l-2 border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'"
@@ -974,7 +997,7 @@
             <svg class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-4.179 2.25" />
             </svg>
-            <span x-show="!sidebarCollapsed">Models</span>
+            <span x-show="!sidebarCollapsed" class="sidebar-label">Models</span>
           </button>
           <button @click="switchDashboardTab('chat')"
             :class="dashboardTab === 'chat'
@@ -985,7 +1008,7 @@
             <svg class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
             </svg>
-            <span x-show="!sidebarCollapsed">Chat</span>
+            <span x-show="!sidebarCollapsed" class="sidebar-label">Chat</span>
           </button>
           <button @click="switchDashboardTab('clusters')"
             :class="dashboardTab === 'clusters'
@@ -996,7 +1019,7 @@
             <svg class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5a17.92 17.92 0 01-8.716-2.247m0 0A8.966 8.966 0 013 12c0-1.264.26-2.468.732-3.562" />
             </svg>
-            <span x-show="!sidebarCollapsed">Clusters</span>
+            <span x-show="!sidebarCollapsed" class="sidebar-label">Clusters</span>
           </button>
           <button @click="switchDashboardTab('swarms')"
             :class="dashboardTab === 'swarms'
@@ -1007,7 +1030,7 @@
             <svg class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.935-2.186 2.25 2.25 0 00-3.935 2.186z" />
             </svg>
-            <span x-show="!sidebarCollapsed">Swarms</span>
+            <span x-show="!sidebarCollapsed" class="sidebar-label">Swarms</span>
           </button>
           <button @click="switchDashboardTab('peers')"
             :class="dashboardTab === 'peers'
@@ -1018,7 +1041,7 @@
             <svg class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
             </svg>
-            <span x-show="!sidebarCollapsed">Peers</span>
+            <span x-show="!sidebarCollapsed" class="sidebar-label">Peers</span>
           </button>
           <button @click="switchDashboardTab('activity')"
             :class="dashboardTab === 'activity'
@@ -1029,7 +1052,7 @@
             <svg class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
             </svg>
-            <span x-show="!sidebarCollapsed">Activity</span>
+            <span x-show="!sidebarCollapsed" class="sidebar-label">Activity</span>
           </button>
         </nav>
         <div class="border-t border-slate-800 p-2 space-y-1">
@@ -1038,7 +1061,7 @@
             :title="lobbyStatusTitle()">
             <span class="block h-2 w-2 shrink-0 rounded-full"
               :class="status.lobby_connected ? 'bg-emerald-500' : 'bg-amber-500'"></span>
-            <span x-show="!sidebarCollapsed" class="text-slate-400 truncate" x-text="lobbyStatusLabel()"></span>
+            <span x-show="!sidebarCollapsed" class="sidebar-label text-slate-400 truncate" x-text="lobbyStatusLabel()"></span>
           </button>
           <button type="button" @click="settingsPanel.open = true"
             class="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-slate-400 transition hover:bg-slate-800/50 hover:text-slate-200"
@@ -1047,13 +1070,13 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c-.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
               <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-            <span x-show="!sidebarCollapsed">Settings</span>
+            <span x-show="!sidebarCollapsed" class="sidebar-label">Settings</span>
           </button>
         </div>
       </aside>
 
       <!-- Main area -->
-      <div class="flex min-h-0 flex-1 flex-col transition-all duration-200" :class="sidebarCollapsed ? 'ml-14' : 'ml-56'">
+      <div class="flex min-h-0 flex-1 flex-col transition-all duration-200" :class="(sidebarCollapsed || mobileSurface) ? 'ml-14' : 'ml-56'">
 
         <!-- Topbar -->
         <header class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-4 border-b border-slate-800 bg-slate-900 px-6">
@@ -1663,7 +1686,7 @@
             <div class="flex flex-wrap items-center gap-2 border-b border-slate-800 px-2 py-2">
               <div class="relative min-w-0 flex-1" @click.outside="chat.pickerOpen = false">
                 <button type="button" @click="chat.pickerOpen = !chat.pickerOpen"
-                  class="flex w-full max-w-xl items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-left text-sm text-slate-100 hover:border-slate-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/40">
+                  class="chat-model-picker flex w-full max-w-xl items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-left text-sm text-slate-100 hover:border-slate-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/40">
                   <template x-if="selectedChatModel()?.location === 'local'">
                     <svg class="h-4 w-4 shrink-0 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
@@ -1753,7 +1776,7 @@
             </div>
 
             <p x-show="chat.error" class="px-2 pb-1 text-xs text-red-400 break-words" x-text="chat.error"></p>
-            <div class="border-t border-slate-800 p-2 space-y-2">
+            <div class="chat-composer border-t border-slate-800 p-2 space-y-2">
               <textarea x-model="chat.input" rows="3"
                 @keydown.enter.exact.prevent="sendChatMessage()"
                 :disabled="chat.streaming || !chat.model || !chat.sessionId"
@@ -2296,11 +2319,19 @@
 
   <script>
     function mtrxaiApp() {
+      const mobileSurface = new URLSearchParams(window.location.search).get('surface') === 'mobile';
+      if (mobileSurface) {
+        document.documentElement.classList.add('mobile-surface');
+      }
+      const defaultTab = mobileSurface
+        ? 'chat'
+        : (localStorage.getItem('mtrxai_dashboard_tab') || 'hardware');
       return {
+        mobileSurface,
         setup: { complete: false, step: 1, has_peer: false, has_clusters: false, has_swarms: false, p2p_mode: 'cluster', has_llm: false },
         status: {},
-        dashboardTab: localStorage.getItem('mtrxai_dashboard_tab') || 'hardware',
-        sidebarCollapsed: false,
+        dashboardTab: defaultTab,
+        sidebarCollapsed: mobileSurface ? true : false,
         searchQuery: '',
         searchDropdownOpen: false,
         modelsSearchQuery: '',
@@ -4087,6 +4118,15 @@
         },
 
         async init() {
+          if (this.mobileSurface) {
+            document.title = 'mtrxAI Chat';
+            const hidden = new Set(['hardware', 'llm', 'models']);
+            if (hidden.has(this.dashboardTab)) {
+              this.dashboardTab = 'chat';
+            }
+            this.sidebarCollapsed = true;
+          }
+
           this._gpuChartResizeHandler = () => {
             this.resizeGpuChart();
             this._txModelChart?.resize();
@@ -4131,14 +4171,24 @@
           await this.refreshStatus();
           if (this.setup.complete) {
             await this.loadBlockedPeers();
-            await this.scanLlm();
+            if (!this.mobileSurface) {
+              await this.scanLlm();
+            }
             this.updateStatusPollInterval();
-            this.subtitle = 'Dashboard';
-            this.scheduleGpuChartRender();
-            this.$nextTick(() => this.bindGpuChartResizeObserver());
+            this.subtitle = this.mobileSurface ? 'Chat' : 'Dashboard';
+            if (!this.mobileSurface) {
+              this.scheduleGpuChartRender();
+              this.$nextTick(() => this.bindGpuChartResizeObserver());
+            }
+            if (this.mobileSurface) {
+              await this.loadChatModels();
+              await this.loadChatSessions();
+            }
           } else if (this.setup.step === 3) {
-            this.subtitle = 'Select LLM server';
-            await this.scanLlm();
+            this.subtitle = this.mobileSurface ? 'Join a cluster or swarm' : 'Select LLM server';
+            if (!this.mobileSurface) {
+              await this.scanLlm();
+            }
           } else if (this.setup.step === 2) {
             this.subtitle = 'Set up clusters';
           } else {
@@ -4297,6 +4347,9 @@
         },
 
         async switchDashboardTab(tab) {
+          if (this.mobileSurface && ['hardware', 'llm', 'models'].includes(tab)) {
+            tab = 'chat';
+          }
           if (this.dashboardTab === 'activity' && tab !== 'activity') {
             this.stopActivityPolling();
           }
@@ -4306,7 +4359,11 @@
           }
           this.stopActivityPolling();
           this.dashboardTab = tab;
-          try { localStorage.setItem('mtrxai_dashboard_tab', tab); } catch (_) {}
+          try {
+            if (!this.mobileSurface) {
+              localStorage.setItem('mtrxai_dashboard_tab', tab);
+            }
+          } catch (_) {}
           if (tab === 'hardware') {
             await this.refreshStatus();
             this.scheduleGpuChartRender();

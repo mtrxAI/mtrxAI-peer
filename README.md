@@ -51,4 +51,6 @@ docker build -f mtrxAI-peer/Dockerfile -t mtrxai/mtrx-peer .
 - **Test** — unit + all `peer-tests` integration suites (matrix).
 - **Release** — attested Docker (linux amd64/arm64) + desktop (Windows/Linux amd64+arm64, macOS arm64).
 
+Android chat APK (consumer peer, chat-first UI): see [desktop/README.md](desktop/README.md#android-chat-apk).
+
 Secrets: see [docs/CI_SECRETS.md](docs/CI_SECRETS.md).
