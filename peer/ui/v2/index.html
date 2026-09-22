@@ -1830,6 +1830,8 @@
                   <span :class="r.lobby_connected ? 'text-green-400' : 'text-amber-400'"
                     x-text="r.connected ? (r.lobby_connected ? 'cluster online' : 'connecting…') : 'disconnected'"></span>
                   <div class="text-slate-500"><span x-text="r.inbound_peers"></span> in · <span x-text="r.outbound_peers"></span> out</div>
+                  <div x-show="r.connected && !r.lobby_connected && r.last_error"
+                    class="text-red-400 max-w-[14rem] break-words" x-text="r.last_error"></div>
                   <div x-show="!r.accepting_jobs" class="text-amber-400">maintenance</div>
                   <div x-show="r.thermal_paused" class="text-red-400">GPU thermal pause</div>
                   <div x-show="r.schedule_enabled && !r.schedule_inside_window" class="text-slate-400">scheduled off-hours</div>

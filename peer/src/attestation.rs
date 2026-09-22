@@ -57,9 +57,90 @@ fn platform_string() -> String {
     format!("{}/{}", std::env::consts::OS, std::env::consts::ARCH)
 }
 
+/// Path of the bytes we attest.
+///
+/// Desktop / container: the running executable.
+/// Android: `libmtrxai_tauri.so` (allowlist hashes that `.so`, not `app_process`).
 pub fn hash_current_binary() -> anyhow::Result<String> {
-    let exe = std::env::current_exe()?;
-    hash_file(&exe).map_err(|e| anyhow::anyhow!(e))
+    let path = attested_binary_path()?;
+    hash_file(&path).map_err(|e| anyhow::anyhow!(e))
+}
+
+fn attested_binary_path() -> anyhow::Result<std::path::PathBuf> {
+    #[cfg(target_os = "android")]
+    {
+        android_native_lib_path()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Ok(std::env::current_exe()?)
+    }
+}
+
+#[cfg(target_os = "android")]
+fn android_native_lib_path() -> anyhow::Result<std::path::PathBuf> {
+    const LIB_NAME: &str = "libmtrxai_tauri.so";
+
+    // Prefer /proc/self/maps: points at the extracted jni lib when legacy packaging is on.
+    if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
+        for line in maps.lines() {
+            if !line.contains(LIB_NAME) {
+                continue;
+            }
+            let Some(path) = line.split_whitespace().last() else {
+                continue;
+            };
+            if path.starts_with('/') && !path.contains('!') && std::path::Path::new(path).is_file()
+            {
+                return Ok(std::path::PathBuf::from(path));
+            }
+        }
+    }
+
+    // Fallback: dladdr on a symbol in this cdylib.
+    use std::os::raw::{c_char, c_void};
+
+    #[repr(C)]
+    struct DlInfo {
+        dli_fname: *const c_char,
+        dli_fbase: *mut c_void,
+        dli_sname: *const c_char,
+        dli_saddr: *mut c_void,
+    }
+    extern "C" {
+        fn dladdr(addr: *const c_void, info: *mut DlInfo) -> i32;
+    }
+
+    let mut info = DlInfo {
+        dli_fname: std::ptr::null(),
+        dli_fbase: std::ptr::null_mut(),
+        dli_sname: std::ptr::null(),
+        dli_saddr: std::ptr::null_mut(),
+    };
+    let addr = android_native_lib_path as *const c_void;
+    let rc = unsafe { dladdr(addr, &mut info) };
+    if rc == 0 || info.dli_fname.is_null() {
+        anyhow::bail!("could not locate {LIB_NAME} for attestation hashing");
+    }
+    let cstr = unsafe { std::ffi::CStr::from_ptr(info.dli_fname) };
+    let path = std::path::PathBuf::from(cstr.to_string_lossy().as_ref());
+    if !path.is_file() || path.to_string_lossy().contains('!') {
+        anyhow::bail!(
+            "attestation lib path is not a regular file ({}); enable jniLibs.useLegacyPackaging",
+            path.display()
+        );
+    }
+    if !path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n == LIB_NAME)
+    {
+        anyhow::bail!(
+            "dladdr returned {} (expected {LIB_NAME}); enable jniLibs.useLegacyPackaging",
+            path.display()
+        );
+    }
+    Ok(path)
 }
 
 pub async fn fetch_challenge(

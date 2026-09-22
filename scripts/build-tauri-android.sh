@@ -78,7 +78,11 @@ if [[ "${DEBUG}" -eq 1 ]]; then
   BUILD_ARGS+=(--debug)
 fi
 
-echo "==> Building Android (${TARGET})${DEBUG:+ debug}"
+if [[ "${DEBUG}" -eq 1 ]]; then
+  echo "==> Building Android (${TARGET}) debug"
+else
+  echo "==> Building Android (${TARGET}) release"
+fi
 npx tauri "${BUILD_ARGS[@]}"
 
 ANDROID_OUT="src-tauri/gen/android/app/build/outputs"

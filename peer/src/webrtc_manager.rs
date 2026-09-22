@@ -520,7 +520,14 @@ impl WebRTCManager {
         ws_url.push_str(&url_encode_component(&timestamp));
         ws_url.push_str("&signature=");
         ws_url.push_str(&url_encode_component(&signature));
-        let (ws_stream, _) = connect_async(ws_url).await?;
+        // Explicit timeout: native-roots TLS stalls on some Android devices never complete.
+        let (ws_stream, _) = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            connect_async(&ws_url),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("lobby WebSocket connect timed out after 15s ({ws_base}/ws)"))?
+        .map_err(|e| anyhow::anyhow!("lobby WebSocket connect failed ({ws_base}/ws): {e}"))?;
         let (ws_write, ws_read) = ws_stream.split();
         let display_name = my_name.clone();
         let manager = WebRTCManager {
@@ -708,7 +715,15 @@ impl WebRTCManager {
             .insert(self.cluster_id.clone(), connected);
         let connected_map = self.cluster_connected.lock().await.clone();
         let cfg = self.proxy_state.client_config.read().await;
-        let thermal_active = self.shared_state.lock().await.gpu_thermal_guard.active;
+        let (thermal_active, prev_errors) = {
+            let state = self.shared_state.lock().await;
+            let errors: HashMap<String, Option<String>> = state
+                .clusters
+                .iter()
+                .map(|c| (c.cluster_id.clone(), c.last_error.clone()))
+                .collect();
+            (state.gpu_thermal_guard.active, errors)
+        };
         let clusters_cfg = cfg.clusters.clone();
         let registry = self.peer_registry.lock().await;
         let statuses: Vec<crate::shared::ClusterStatus> = clusters_cfg
@@ -729,11 +744,12 @@ impl WebRTCManager {
                     })
                     .count();
                 let schedule = cluster_schedule_fields(&cfg, &r);
+                let lobby_ok = connected_map.get(&r.cluster_id).copied().unwrap_or(false);
                 ClusterStatus {
                     cluster_id: r.cluster_id.clone(),
                     name: r.name.clone(),
                     visibility: r.visibility.clone(),
-                    lobby_connected: connected_map.get(&r.cluster_id).copied().unwrap_or(false),
+                    lobby_connected: lobby_ok,
                     outbound_peers: outbound,
                     inbound_peers: inbound,
                     accepting_jobs: cluster_accepts_jobs(&r),
@@ -745,6 +761,11 @@ impl WebRTCManager {
                     schedule_next_transition_at: schedule.schedule_next_transition_at,
                     schedule_inside_window: schedule.schedule_inside_window,
                     thermal_paused: thermal_active && !cluster_accepts_jobs(&r),
+                    last_error: if lobby_ok {
+                        None
+                    } else {
+                        prev_errors.get(&r.cluster_id).cloned().flatten()
+                    },
                 }
             })
             .collect();

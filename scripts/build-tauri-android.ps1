@@ -51,7 +51,14 @@ try {
     $tauriArgs = @("android", "build", "--target", $Target)
     if ($DebugBuild) { $tauriArgs += "--debug" }
     Write-Host "==> Building Android ($Target)$(if ($DebugBuild) { ' debug' })"
-    & npx tauri @tauriArgs
+    # Prefer local CLI shim; fall back to npm exec (avoids broken `npx tauri` on Windows).
+    $tauriCmd = Join-Path $TauriDir "node_modules\.bin\tauri.cmd"
+    if (Test-Path $tauriCmd) {
+        & $tauriCmd @tauriArgs
+    } else {
+        & npm exec -- tauri @tauriArgs
+    }
+    if ($LASTEXITCODE -ne 0) { throw "tauri android build failed (exit $LASTEXITCODE)" }
 
     $apkRoot = "src-tauri\gen\android\app\build\outputs\apk"
     $apk = Get-ChildItem -Path $apkRoot -Recurse -Filter "*.apk" |

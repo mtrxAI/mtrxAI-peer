@@ -19,7 +19,7 @@ mtrxai-auth = { path = "../../mtrxAI-common/mtrxai-auth" }
 mtrxai-icell-api = { path = "../../mtrxAI-common/mtrxai-icell-api" }
 webrtc = "0.11.0"
 tokio = { version = "1", features = ["full"] }
-tokio-tungstenite = { version = "0.21", features = ["rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.21", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }

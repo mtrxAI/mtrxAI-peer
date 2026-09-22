@@ -58,6 +58,9 @@ android {
                 jniLibs.keepDebugSymbols.add("*/armeabi-v7a/*.so")
                 jniLibs.keepDebugSymbols.add("*/x86/*.so")
                 jniLibs.keepDebugSymbols.add("*/x86_64/*.so")
+                // Extract .so so runtime attestation can SHA-256 libmtrxai_tauri.so
+                // (matches CI allowed_build.json). Without this, libs may load from the APK.
+                jniLibs.useLegacyPackaging = true
             }
         }
         getByName("release") {
@@ -68,6 +71,9 @@ android {
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
                     .toList().toTypedArray()
             )
+            packaging {
+                jniLibs.useLegacyPackaging = true
+            }
         }
     }
     kotlinOptions {

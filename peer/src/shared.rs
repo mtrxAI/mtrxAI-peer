@@ -160,6 +160,9 @@ pub struct ClusterStatus {
     pub schedule_next_transition_at: Option<u64>,
     pub schedule_inside_window: bool,
     pub thermal_paused: bool,
+    /// Last cluster WebSocket / pre-connect failure (cleared when lobby_connected).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

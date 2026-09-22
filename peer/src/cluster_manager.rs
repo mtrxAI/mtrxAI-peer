@@ -81,6 +81,8 @@ impl ClusterManager {
             }
             if let Err(e) = self.spawn_cluster(&cluster).await {
                 eprintln!("Failed to connect cluster {}: {}", cluster.cluster_id, e);
+                self.record_cluster_error(&cluster.cluster_id, &e.to_string())
+                    .await;
             }
         }
 
@@ -118,6 +120,8 @@ impl ClusterManager {
                                     "Failed to reconnect cluster {}: {}",
                                     cluster.cluster_id, e
                                 );
+                                self.record_cluster_error(&cluster.cluster_id, &e.to_string())
+                                    .await;
                             }
                         }
                     }
@@ -148,6 +152,8 @@ impl ClusterManager {
             {
                 if let Err(e) = self.spawn_cluster(&cluster).await {
                     eprintln!("Failed to spawn cluster {}: {}", cluster.cluster_id, e);
+                    self.record_cluster_error(&cluster.cluster_id, &e.to_string())
+                        .await;
                 }
             }
         }
@@ -214,7 +220,7 @@ impl ClusterManager {
         self.cluster_moderation_txs
             .insert(cluster.cluster_id.clone(), mod_tx);
 
-        let manager = WebRTCManager::new(
+        let manager = match WebRTCManager::new(
             self.peer_id.clone(),
             cluster.cluster_id.clone(),
             cluster.name.clone(),
@@ -230,7 +236,17 @@ impl ClusterManager {
             self.swarm_network_models.clone(),
             self.cluster_connected.clone(),
         )
-        .await?;
+        .await
+        {
+            Ok(m) => m,
+            Err(e) => {
+                self.cluster_cmd_txs.remove(&cluster.cluster_id);
+                self.cluster_model_start_txs.remove(&cluster.cluster_id);
+                self.cluster_connection_txs.remove(&cluster.cluster_id);
+                self.cluster_moderation_txs.remove(&cluster.cluster_id);
+                return Err(e);
+            }
+        };
 
         let cluster_id = cluster.cluster_id.clone();
         let handle = tokio::spawn(async move {
@@ -350,7 +366,15 @@ impl ClusterManager {
         let connected = self.cluster_connected.lock().await.clone();
         let registry = self.peer_registry.lock().await;
         let cfg = self.proxy_state.client_config.read().await;
-        let thermal_active = self.shared_state.lock().await.gpu_thermal_guard.active;
+        let (thermal_active, prev_errors) = {
+            let state = self.shared_state.lock().await;
+            let errors: HashMap<String, Option<String>> = state
+                .clusters
+                .iter()
+                .map(|c| (c.cluster_id.clone(), c.last_error.clone()))
+                .collect();
+            (state.gpu_thermal_guard.active, errors)
+        };
         let clusters_cfg = cfg.clusters.clone();
         let statuses: Vec<ClusterStatus> = clusters_cfg
             .into_iter()
@@ -370,11 +394,12 @@ impl ClusterManager {
                     })
                     .count();
                 let schedule = cluster_schedule_fields(&cfg, &c);
+                let lobby_ok = connected.get(&c.cluster_id).copied().unwrap_or(false);
                 ClusterStatus {
                     cluster_id: c.cluster_id.clone(),
                     name: c.name.clone(),
                     visibility: c.visibility.clone(),
-                    lobby_connected: connected.get(&c.cluster_id).copied().unwrap_or(false),
+                    lobby_connected: lobby_ok,
                     outbound_peers: outbound,
                     inbound_peers: inbound,
                     accepting_jobs: cluster_accepts_jobs(&c),
@@ -386,6 +411,11 @@ impl ClusterManager {
                     schedule_next_transition_at: schedule.schedule_next_transition_at,
                     schedule_inside_window: schedule.schedule_inside_window,
                     thermal_paused: thermal_active && !cluster_accepts_jobs(&c),
+                    last_error: if lobby_ok {
+                        None
+                    } else {
+                        prev_errors.get(&c.cluster_id).cloned().flatten()
+                    },
                 }
             })
             .collect();
@@ -393,6 +423,17 @@ impl ClusterManager {
         state.clusters = statuses;
         drop(state);
         self.attach_cluster_models().await;
+    }
+
+    async fn record_cluster_error(&self, cluster_id: &str, error: &str) {
+        let mut state = self.shared_state.lock().await;
+        if let Some(cluster) = state
+            .clusters
+            .iter_mut()
+            .find(|c| c.cluster_id == cluster_id)
+        {
+            cluster.last_error = Some(error.to_string());
+        }
     }
 
     async fn attach_cluster_models(&self) {

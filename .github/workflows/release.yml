@@ -556,21 +556,26 @@ jobs:
             fi
             cp -f "$f" "${dest}/${base}"
             echo "Staged ${folder}/${base} <- ${f}"
-          # Portable binaries live at dist/<artifact>/{mtrxai,mtrxai.exe}. Do not
-          # match nested copies (e.g. macOS .app/Contents/MacOS/mtrxai).
-          done < <(find dist -type f \( \
-            -name 'allowed_build.json' -o \
-            -name '*.AppImage' -o \
-            -name '*.deb' -o \
-            -name '*.dmg' -o \
-            -name '*.msi' -o \
-            -name '*setup.exe' -o \
-            -name '*.tar.gz' -o \
-            -name '*.apk' -o \
-            -name 'libmtrxai_tauri.so' -o \
-            -path 'dist/*/mtrxai' -o \
-            -path 'dist/*/mtrxai.exe' \
-          \) -print0)
+          # Collect release assets only. GNU find -path '*' matches '/', so do NOT
+          # use dist/*/mtrxai — that also hits nested deb/app bundle copies.
+          # Restrict portable binaries to dist/<artifact>/{mtrxai,mtrxai.exe}.
+          done < <({
+            find dist -type f \( \
+              -name 'allowed_build.json' -o \
+              -name '*.AppImage' -o \
+              -name '*.deb' -o \
+              -name '*.dmg' -o \
+              -name '*.msi' -o \
+              -name '*setup.exe' -o \
+              -name 'mtrx-peer-image-*.tar.gz' -o \
+              -name '*.apk' -o \
+              -name 'libmtrxai_tauri.so' \
+            \) -print0
+            find dist -mindepth 2 -maxdepth 2 -type f \( \
+              -name 'mtrxai' -o \
+              -name 'mtrxai.exe' \
+            \) -print0
+          })
 
           shopt -s nullglob
           for dir in release-staging/*/; do

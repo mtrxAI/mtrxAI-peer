@@ -176,7 +176,9 @@ Code: [`peer/src/attestation.rs`](../peer/src/attestation.rs), crypto: [`mtrxai-
 1. If `MTRXAI_ATTESTATION_SKIP=1` → send **no** proof (lobby must skip or optional, or register fails).
 2. If the binary has an empty embedded secret → refuse (not an official build).
 3. `GET {lobby}/api/attestation/challenge`.
-4. Hash **`std::env::current_exe()`** (the file on disk that is running).
+4. Hash the attested binary on disk:
+   - Desktop / Docker: **`std::env::current_exe()`**
+   - Android: **`libmtrxai_tauri.so`** (via `/proc/self/maps` / `dladdr`; APK packaging extracts jni libs so the file is readable)
 5. Build `AttestationClaims`: challenge id, nonce, binary SHA-256, embedded `build_id` / version / git SHA, `OS/ARCH`, `issued_at`.
 6. Canonical string (pipe-separated, **not** JSON):
 
