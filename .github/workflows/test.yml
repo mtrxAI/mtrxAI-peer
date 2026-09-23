@@ -15,6 +15,10 @@ on:
           - all
           - unit
           - integration
+      common_ref:
+        description: mtrxAI-common git ref (branch, tag, or SHA). Example version/0.4.0. Empty uses the repo variable MTRXAI_COMMON_REF, then this workflow branch.
+        required: false
+        type: string
 
 concurrency:
   group: peer-test-${{ github.workflow }}-${{ github.ref }}
@@ -45,7 +49,7 @@ jobs:
         with:
           repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
           path: mtrxAI-common
-          ref: ${{ vars.MTRXAI_COMMON_REF || 'main' }}
+          ref: ${{ inputs.common_ref || vars.MTRXAI_COMMON_REF || github.head_ref || github.ref_name }}
           token: ${{ secrets.MTRXAI_COMMON_READ_TOKEN || github.token }}
 
       - uses: dtolnay/rust-toolchain@stable
@@ -97,7 +101,7 @@ jobs:
         with:
           repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
           path: mtrxAI-common
-          ref: ${{ vars.MTRXAI_COMMON_REF || 'main' }}
+          ref: ${{ inputs.common_ref || vars.MTRXAI_COMMON_REF || github.head_ref || github.ref_name }}
           token: ${{ secrets.MTRXAI_COMMON_READ_TOKEN || github.token }}
 
       - uses: dtolnay/rust-toolchain@stable

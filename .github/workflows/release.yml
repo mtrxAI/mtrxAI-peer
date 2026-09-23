@@ -15,6 +15,10 @@ on:
         description: Push attested images to Docker Hub
         type: boolean
         default: true
+      common_ref:
+        description: mtrxAI-common git ref (branch, tag, or SHA). Example version/0.4.0. Empty uses the repo variable MTRXAI_COMMON_REF, then this workflow branch.
+        required: false
+        type: string
   push:
     tags:
       - "v*"
@@ -36,6 +40,7 @@ jobs:
     outputs:
       version: ${{ steps.meta.outputs.version }}
       client_image: ${{ steps.meta.outputs.client_image }}
+      common_ref: ${{ steps.meta.outputs.common_ref }}
     steps:
       - name: Checkout peer
         uses: actions/checkout@v4
@@ -46,6 +51,8 @@ jobs:
         id: meta
         env:
           INPUT_VERSION: ${{ inputs.version }}
+          INPUT_COMMON_REF: ${{ inputs.common_ref }}
+          VAR_COMMON_REF: ${{ vars.MTRXAI_COMMON_REF }}
         run: |
           set -euo pipefail
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
@@ -57,11 +64,22 @@ jobs:
           fi
           python3 scripts/sync_release_version.py sync "${VER}"
           eval "$(python3 scripts/sync_release_version.py print-env | sed 's/^/export /')"
+          if [[ -n "${INPUT_COMMON_REF}" ]]; then
+            COMMON_REF="${INPUT_COMMON_REF}"
+          elif [[ -n "${VAR_COMMON_REF}" ]]; then
+            COMMON_REF="${VAR_COMMON_REF}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            COMMON_REF="version/${VER}"
+          else
+            COMMON_REF="${GITHUB_REF_NAME}"
+          fi
           {
             echo "version=${MTRXAI_VERSION}"
             echo "client_image=${MTRXAI_DOCKER_CLIENT_IMAGE}"
+            echo "common_ref=${COMMON_REF}"
           } >> "${GITHUB_OUTPUT}"
           echo "Release version: ${MTRXAI_VERSION}"
+          echo "mtrxAI-common ref: ${COMMON_REF}"
 
   docker:
     name: Docker linux/${{ matrix.arch }}
@@ -96,7 +114,7 @@ jobs:
         with:
           repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
           path: mtrxAI-common
-          ref: ${{ vars.MTRXAI_COMMON_REF || 'main' }}
+          ref: ${{ needs.resolve-version.outputs.common_ref }}
           token: ${{ secrets.MTRXAI_COMMON_READ_TOKEN || github.token }}
 
       - name: Sync package version
@@ -265,7 +283,7 @@ jobs:
         with:
           repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
           path: mtrxAI-common
-          ref: ${{ vars.MTRXAI_COMMON_REF || 'main' }}
+          ref: ${{ needs.resolve-version.outputs.common_ref }}
           token: ${{ secrets.MTRXAI_COMMON_READ_TOKEN || github.token }}
 
       - name: Sync package version (unix)
@@ -395,7 +413,7 @@ jobs:
         with:
           repository: ${{ format('{0}/mtrxAI-common', github.repository_owner) }}
           path: mtrxAI-common
-          ref: ${{ vars.MTRXAI_COMMON_REF || 'main' }}
+          ref: ${{ needs.resolve-version.outputs.common_ref }}
           token: ${{ secrets.MTRXAI_COMMON_READ_TOKEN || github.token }}
 
       - name: Sync package version
