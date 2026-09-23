@@ -10,6 +10,8 @@ use uuid::Uuid;
 use webrtc::api::APIBuilder;
 use webrtc::data_channel::data_channel_state::RTCDataChannelState;
 use webrtc::data_channel::RTCDataChannel;
+use webrtc::ice_transport::ice_credential_type::RTCIceCredentialType;
+use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
@@ -283,19 +285,52 @@ fn ws_send_disconnected(err: &anyhow::Error) -> bool {
 }
 
 fn url_encode_component(s: &str) -> String {
+    urlencoding_simple(s)
+}
+
+fn urlencoding_simple(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 out.push(b as char);
             }
-            _ => {
-                use std::fmt::Write;
-                let _ = write!(out, "%{:02X}", b);
-            }
+            _ => out.push_str(&format!("%{b:02X}")),
         }
     }
     out
+}
+
+/// Map lobby ICE config to webrtc-rs RTCIceServer entries.
+pub fn to_rtc_ice_servers(configs: &[mtrxai_protocol::IceServerConfig]) -> Vec<RTCIceServer> {
+    if configs.is_empty() {
+        return vec![RTCIceServer {
+            urls: vec!["stun:stun.l.google.com:19302".to_string()],
+            ..Default::default()
+        }];
+    }
+    configs
+        .iter()
+        .map(|c| {
+            let has_turn = c.urls.iter().any(|u| {
+                let lower = u.to_ascii_lowercase();
+                lower.starts_with("turn:") || lower.starts_with("turns:")
+            });
+            let username = c.username.clone().unwrap_or_default();
+            let credential = c.credential.clone().unwrap_or_default();
+            let credential_type = if has_turn && !username.is_empty() && !credential.is_empty() {
+                RTCIceCredentialType::Password
+            } else {
+                RTCIceCredentialType::Unspecified
+            };
+            RTCIceServer {
+                urls: c.urls.clone(),
+                username,
+                credential,
+                credential_type,
+            }
+        })
+        .collect()
 }
 
 async fn send_progress(
@@ -474,6 +509,8 @@ pub struct WebRTCManager {
     peer_attestation_hints: Arc<Mutex<HashMap<String, u64>>>,
     /// Peers currently going through outbound SDP offer / ICE setup.
     negotiating_peers: Arc<Mutex<HashSet<String>>>,
+    /// Resolved ICE servers for this cluster session (STUN + optional TURN).
+    ice_servers: Arc<Mutex<Vec<RTCIceServer>>>,
 }
 
 impl WebRTCManager {
@@ -506,6 +543,24 @@ impl WebRTCManager {
 
         if my_name.is_empty() {
             anyhow::bail!("peer_id required for lobby WebSocket connection");
+        }
+
+        let resolved_ice = crate::client_config::resolve_webrtc_ice_servers(
+            &proxy_state.http_client,
+            &lobby_server_host,
+            Some(&my_name),
+            Some(proxy_state.tx_store.as_ref()),
+        )
+        .await;
+        proxy_state.set_ice_servers(resolved_ice.clone()).await;
+        let ice_servers = to_rtc_ice_servers(&resolved_ice);
+        if ice_servers
+            .iter()
+            .any(|s| s.urls.iter().any(|u| u.starts_with("turn")))
+        {
+            println!("🧊 ICE: TURN relay configured ({} server entries)", ice_servers.len());
+        } else {
+            println!("🧊 ICE: STUN-only ({} server entries)", ice_servers.len());
         }
 
         let cluster_param = url_encode_component(&cluster_id);
@@ -561,6 +616,7 @@ impl WebRTCManager {
             last_cluster_state_version: AtomicU64::new(0),
             peer_attestation_hints: Arc::new(Mutex::new(HashMap::new())),
             negotiating_peers: Arc::new(Mutex::new(HashSet::new())),
+            ice_servers: Arc::new(Mutex::new(ice_servers)),
         };
         manager.set_cluster_connected(false).await;
         println!(
@@ -973,13 +1029,11 @@ impl WebRTCManager {
         Ok(())
     }
 
-    async fn create_peer_connection() -> anyhow::Result<Arc<RTCPeerConnection>> {
+    async fn create_peer_connection(&self) -> anyhow::Result<Arc<RTCPeerConnection>> {
         let api = APIBuilder::new().build();
+        let ice_servers = self.ice_servers.lock().await.clone();
         let config = RTCConfiguration {
-            ice_servers: vec![webrtc::ice_transport::ice_server::RTCIceServer {
-                urls: vec!["stun:stun.l.google.com:19302".to_string()],
-                ..Default::default()
-            }],
+            ice_servers,
             ..Default::default()
         };
         Ok(Arc::new(api.new_peer_connection(config).await?))
@@ -1414,7 +1468,7 @@ impl WebRTCManager {
                         "🔌 Creating direct WebRTC session link targeting: {}",
                         target_peer
                     );
-                    let pc = Self::create_peer_connection().await?;
+                    let pc = self.create_peer_connection().await?;
                     let data_channel = pc.create_data_channel("secure-chat", None).await?;
 
                     setup_data_channel_handlers(
@@ -1715,6 +1769,7 @@ impl WebRTCManager {
                 cluster_id,
                 cluster_name,
                 required_attestation_flags,
+                ice_servers,
             } => {
                 let cluster_id = cluster_id.to_string();
                 println!(
@@ -1735,6 +1790,21 @@ impl WebRTCManager {
                         cluster.required_attestation_flags = Some(flags);
                     }
                     let _ = crate::client_config::save_client_config(&cfg);
+                }
+                if let Some(servers) = ice_servers {
+                    if !servers.is_empty() {
+                        self.proxy_state.set_ice_servers(servers.clone()).await;
+                        *self.ice_servers.lock().await = to_rtc_ice_servers(&servers);
+                        let has_turn = servers.iter().any(|s| {
+                            s.urls.iter().any(|u| {
+                                let l = u.to_ascii_lowercase();
+                                l.starts_with("turn:") || l.starts_with("turns:")
+                            })
+                        });
+                        if has_turn {
+                            println!("🧊 ICE refreshed from lobby (TURN credentials)");
+                        }
+                    }
                 }
                 self.set_cluster_connected(true).await;
 
@@ -2119,7 +2189,7 @@ impl WebRTCManager {
                         from
                     );
 
-                    let pc = Self::create_peer_connection().await?;
+                    let pc = self.create_peer_connection().await?;
 
                     let ps_for_dc = Arc::new(Mutex::new(PeerState {
                         pc: pc.clone(),

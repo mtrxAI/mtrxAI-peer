@@ -491,11 +491,14 @@ MAC = HMAC-SHA256(key=p2p_token, data="mtrxAI-proxy-auth-v1" || peer_id || times
 
 ### 10.1 Signaling
 
-1. Client opens `ws://{lobby}/ws?cluster_id={id}&name={peer_id}&session_token={token}`
-2. Lobby relays SDP offers/answers via `ProtocolMessage::Route`
-3. ICE/WebRTC establishes peer connection
+1. Client opens `ws://{lobby}/ws?cluster_id={id}&name={peer_id}` with Ed25519 peer auth query params
+2. Lobby sends `ProtocolMessage::Registered` (optional `ice_servers` with short-lived TURN credentials)
+3. Lobby relays SDP offers/answers via `ProtocolMessage::Route`
+4. ICE/WebRTC establishes peer connection (STUN and optional TURN from lobby)
 
-**Hardcoded `ws://`** — no automatic upgrade to `wss://`.
+**Hardcoded `ws://`** — no automatic upgrade to `wss://` (prefer `MTRXAI_LOBBY_TLS=1` in production).
+
+**TURN credentials** are minted by the lobby (`coturn` `static-auth-secret` HMAC) and delivered on register / WS `Registered` / `GET /api/webrtc/ice-servers`. They are short-lived and **not** persisted in `peer_config.json`. Prefer TLS on the lobby so credentials are not sniffed on the wire.
 
 ### 10.2 Data channel proxy
 
@@ -856,6 +859,7 @@ Prioritized suggestions aligned with current architecture.
 | `MTRXAI_REQUIRE_TEE` | off | Filter swarm peers by TEE |
 | `MTRXAI_ATTESTATION_SKIP` | off (on in Docker) | Skip binary attestation |
 | `MTRXAI_TEE_MOCK` | off | Mock GPU attestation in dev |
+| `MTRXAI_ICE_SERVERS` | unset | JSON ICE override (runtime only; skips lobby fetch) |
 
 ### Server security
 
@@ -865,6 +869,9 @@ Prioritized suggestions aligned with current architecture.
 | `MTRXAI_SESSION_SECRET` | dev string | HMAC for session tokens |
 | `MTRXAI_ADMIN_KEY` | unset | Admin build API |
 | `DATABASE_URL` | local postgres | DB connection |
+| `MTRXAI_TURN_ENABLED` | off | Mint TURN credentials for peers |
+| `MTRXAI_TURN_SECRET` | unset | Shared with coturn `static-auth-secret` |
+| `MTRXAI_TURN_PUBLIC_HOST` | unset | Hostname in `turn:` ICE URLs |
 
 ---
 

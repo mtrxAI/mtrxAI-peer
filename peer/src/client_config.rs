@@ -151,6 +151,109 @@ pub async fn resolve_swarm_bootnodes(
     fetch_bootnodes_from_lobby(http_client, lobby_host).await
 }
 
+const DEFAULT_GOOGLE_STUN: &str = "stun:stun.l.google.com:19302";
+
+/// Parse `MTRXAI_ICE_SERVERS` JSON array override (dev/standalone).
+pub fn default_ice_servers_from_env() -> Vec<mtrxai_protocol::IceServerConfig> {
+    let Ok(raw) = std::env::var("MTRXAI_ICE_SERVERS") else {
+        return Vec::new();
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    serde_json::from_str(trimmed).unwrap_or_else(|e| {
+        eprintln!("⚠️ MTRXAI_ICE_SERVERS JSON parse failed: {e}");
+        Vec::new()
+    })
+}
+
+pub fn default_google_stun_servers() -> Vec<mtrxai_protocol::IceServerConfig> {
+    vec![mtrxai_protocol::IceServerConfig {
+        urls: vec![DEFAULT_GOOGLE_STUN.to_string()],
+        username: None,
+        credential: None,
+    }]
+}
+
+#[derive(Debug, Deserialize)]
+struct IceServersResponse {
+    ice_servers: Vec<mtrxai_protocol::IceServerConfig>,
+}
+
+pub async fn fetch_public_ice_servers_from_lobby(
+    http_client: &reqwest::Client,
+    lobby_host: &str,
+) -> Vec<mtrxai_protocol::IceServerConfig> {
+    let url = crate::lobby_url::lobby_api_url(lobby_host, "/api/public/webrtc/ice-servers");
+    let Ok(resp) = http_client.get(&url).send().await else {
+        return Vec::new();
+    };
+    if !resp.status().is_success() {
+        return Vec::new();
+    }
+    resp.json::<IceServersResponse>()
+        .await
+        .map(|b| b.ice_servers)
+        .unwrap_or_default()
+}
+
+/// Authenticated ICE fetch (includes short-lived TURN credentials when lobby has TURN enabled).
+pub async fn fetch_ice_servers_from_lobby(
+    http_client: &reqwest::Client,
+    lobby_host: &str,
+    peer_id: &str,
+    tx_store: &crate::tx_db::TxStore,
+) -> Vec<mtrxai_protocol::IceServerConfig> {
+    let url = crate::lobby_url::lobby_api_url(lobby_host, "/api/webrtc/ice-servers");
+    let Ok((timestamp, signature)) = crate::security::build_ws_auth_query(tx_store, peer_id) else {
+        return Vec::new();
+    };
+    let Ok(resp) = http_client
+        .get(&url)
+        .query(&[
+            ("peer_id", peer_id),
+            ("timestamp", timestamp.as_str()),
+            ("signature", signature.as_str()),
+        ])
+        .send()
+        .await
+    else {
+        return Vec::new();
+    };
+    if !resp.status().is_success() {
+        return Vec::new();
+    }
+    resp.json::<IceServersResponse>()
+        .await
+        .map(|b| b.ice_servers)
+        .unwrap_or_default()
+}
+
+/// Resolve ICE servers: env override → authenticated lobby → public STUN → Google STUN.
+pub async fn resolve_webrtc_ice_servers(
+    http_client: &reqwest::Client,
+    lobby_host: &str,
+    peer_id: Option<&str>,
+    tx_store: Option<&crate::tx_db::TxStore>,
+) -> Vec<mtrxai_protocol::IceServerConfig> {
+    let from_env = default_ice_servers_from_env();
+    if !from_env.is_empty() {
+        return from_env;
+    }
+    if let (Some(peer_id), Some(store)) = (peer_id.filter(|id| !id.trim().is_empty()), tx_store) {
+        let auth = fetch_ice_servers_from_lobby(http_client, lobby_host, peer_id, store).await;
+        if !auth.is_empty() {
+            return auth;
+        }
+    }
+    let public = fetch_public_ice_servers_from_lobby(http_client, lobby_host).await;
+    if !public.is_empty() {
+        return public;
+    }
+    default_google_stun_servers()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CustomModelEntry {
     pub id: String,
@@ -436,6 +539,8 @@ pub struct RegisterPeerResponse {
     pub service_id: Uuid,
     pub service_name: String,
     pub credit_balance: i64,
+    #[serde(default)]
+    pub ice_servers: Option<Vec<mtrxai_protocol::IceServerConfig>>,
 }
 
 #[derive(Debug, Deserialize)]

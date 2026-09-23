@@ -25,6 +25,23 @@ Requires the lobby server (with PostgreSQL) to be running for peer registration 
 4. Advertise models to the lobby (`updatemodels`)
 5. Serve HTTP proxy and handle remote routing over WebRTC
 
+## WebRTC ICE / TURN
+
+Cluster WebRTC resolves ICE servers in this order:
+
+1. `MTRXAI_ICE_SERVERS` — JSON array override (dev/standalone; not persisted)
+2. Authenticated `GET /api/webrtc/ice-servers` (short-lived TURN when lobby has TURN enabled)
+3. Public `GET /api/public/webrtc/ice-servers` (STUN only)
+4. Default Google STUN
+
+TURN credentials from the lobby are kept in a **runtime cache** only (never written to `peer_config.json`). They are refreshed on cluster WebSocket `Registered` and on each `WebRTCManager` connect.
+
+Example override:
+
+```bash
+MTRXAI_ICE_SERVERS='[{"urls":["stun:stun.l.google.com:19302","turn:turn.example.com:3478?transport=udp"],"username":"user","credential":"pass"}]'
+```
+
 ## Source modules
 
 | File | Role |

@@ -483,6 +483,11 @@ async fn finish_register(
         cfg.lobby_host = lobby_host;
         save_client_config(&cfg).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
+    if let Some(ref ice) = reg.ice_servers {
+        if !ice.is_empty() {
+            state.set_ice_servers(ice.clone()).await;
+        }
+    }
 
     let cluster_name = body
         .cluster_name

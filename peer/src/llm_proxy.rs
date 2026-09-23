@@ -139,6 +139,8 @@ pub struct ProxyState {
     pub peer_stats: crate::peer_stats::PeerStatsTrackerHandle,
     pub peer_registry: PeerRegistry,
     pub peer_moderation_tx: tokio::sync::mpsc::Sender<crate::shared::PeerModerationAction>,
+    /// Runtime ICE server cache (STUN/TURN). Not persisted to peer_config.json.
+    pub ice_servers: Arc<tokio::sync::RwLock<Vec<mtrxai_protocol::IceServerConfig>>>,
 }
 
 impl ProxyState {
@@ -183,7 +185,16 @@ impl ProxyState {
             peer_stats,
             peer_registry,
             peer_moderation_tx,
+            ice_servers: Arc::new(tokio::sync::RwLock::new(Vec::new())),
         }
+    }
+
+    pub async fn set_ice_servers(&self, servers: Vec<mtrxai_protocol::IceServerConfig>) {
+        *self.ice_servers.write().await = servers;
+    }
+
+    pub async fn get_ice_servers(&self) -> Vec<mtrxai_protocol::IceServerConfig> {
+        self.ice_servers.read().await.clone()
     }
 
     pub fn bump_cluster_state(&self) {
